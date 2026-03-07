@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "SmartAd 素材需求提取助手",
+  "version": "1.0.0",
+  "description": "一键提取网页上的素材需求结构化数据，并导出 Excel 与 JSON。",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

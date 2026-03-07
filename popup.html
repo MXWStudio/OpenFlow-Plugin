@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>素材需求提取</h2>
+    <button id="extractBtn" class="btn primary">一键提取当前页数据</button>
+    
+    <div id="previewArea" style="display:none;">
+      <h3>📌 提取预览</h3>
+      <p><strong>项目名称：</strong><span id="pName">-</span></p>
+      <p><strong>素材要求：</strong><span id="pType">-</span></p>
+      <p><strong>尺寸明细：</strong></p>
+      <ul id="pDetails"></ul>
+      
+      <h3>📁 生成目录预览</h3>
+      <pre id="folderPreview"></pre>
+      
+      <div class="actions">
+        <button id="downloadCsvBtn" class="btn">下载 CSV</button>
+        <button id="downloadJsonBtn" class="btn">下载 JSON</button>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
