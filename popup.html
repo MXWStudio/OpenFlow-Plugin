@@ -1,30 +1,159 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <link rel="stylesheet" href="popup.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartAd 素材需求提取助手</title>
+    <!-- 引入 SheetJS 用于导出 Excel -->
+    <script src="xlsx.full.min.js"></script>
+    <style>
+        body {
+            width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 16px;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin-top: 0;
+            margin-bottom: 16px;
+            text-align: center;
+            color: #2c3e50;
+            border-bottom: 1px solid #ebebeb;
+            padding-bottom: 8px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            background-color: #1890ff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: #40a9ff;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background-color: #faad14; /* 抓取时的警告黄 */
+            cursor: not-allowed;
+            color: #fff;
+        }
+
+        /* 预览区域样式 */
+        #previewArea {
+            margin-top: 16px;
+            display: none; /* 默认隐藏 */
+            background-color: white;
+            padding: 12px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        #statusText {
+            font-size: 13px;
+            color: #52c41a;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        /* 简要列表样式 */
+        #taskList {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 12px 0;
+            max-height: 120px;
+            overflow-y: auto;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        #taskList li {
+            font-size: 12px;
+            padding: 6px 4px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #taskList li:last-child {
+            border-bottom: none;
+        }
+        
+        #taskList li span.name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 160px;
+            display: inline-block;
+        }
+        
+        #taskList li span.count {
+            color: #888;
+        }
+
+        /* 导出按钮容器 */
+        .export-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .export-actions button {
+            flex: 1;
+            padding: 8px 0;
+            font-size: 13px;
+        }
+
+        .btn-excel {
+            background-color: #52c41a;
+        }
+        .btn-excel:hover {
+            background-color: #73d13d;
+        }
+
+        .btn-json {
+            background-color: #722ed1;
+        }
+        .btn-json:hover {
+            background-color: #9254de;
+        }
+
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h2>素材需求提取</h2>
-    <button id="extractBtn" class="btn primary">一键提取当前页数据</button>
+    <h2>批量提取需求工具</h2>
     
-    <div id="previewArea" style="display:none;">
-      <h3>📌 提取预览</h3>
-      <p><strong>项目名称：</strong><span id="pName">-</span></p>
-      <p><strong>素材要求：</strong><span id="pType">-</span></p>
-      <p><strong>尺寸明细：</strong></p>
-      <ul id="pDetails"></ul>
-      
-      <h3>📁 生成目录预览</h3>
-      <pre id="folderPreview"></pre>
-      
-      <div class="actions">
-        <button id="downloadCsvBtn" class="btn">下载 CSV</button>
-        <button id="downloadJsonBtn" class="btn">下载 JSON</button>
-      </div>
+    <!-- 主操作按钮 -->
+    <button id="extractBtn">提取所有"未开始"任务</button>
+
+    <!-- 预览与导出区域 -->
+    <div id="previewArea">
+        <div id="statusText"></div>
+        <ul id="taskList"></ul>
+            <div class="flex space-x-2 pb-2">
+                <button id="exportCsvBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded shadow transition-colors">
+                    导出 CSV
+                </button>
+                <button id="exportJsonBtn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded shadow transition-colors">
+                    导出 JSON
+                </button>
+            </div>
+        </div>
     </div>
-  </div>
-  <script src="popup.js"></script>
+    
+    <!-- Scripts -->
+    <script src="popup.js"></script>
 </body>
 </html>

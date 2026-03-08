@@ -184,10 +184,226 @@ function extractDataFromPage() {
   }
 }
 
+/**
+ * 辅助函数：等待指定的毫秒数 (sleep)
+ * @param {number} ms 毫秒数
+ * @returns {Promise<void>}
+ */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * 自动遍历点击并抓取数据的异步核心逻辑
+ * @param {Function} sendResponse 用于向后台或 popup 返回通信结果的回调函数
+ */
+async function extractBulkDataFromPageAsync(sendResponse) {
+  try {
+    const extractedDataList = [];
+    
+    // 1. 查找左侧列表：获取所有带有 class="ant-tag-yellow" 并确保文本是“未开始”的元素
+    const tagElements = Array.from(document.querySelectorAll('.ant-tag.ant-tag-yellow'));
+    const unstartedTags = tagElements.filter(tag => tag.innerText.trim() === '未开始');
+    
+    // 如果找不到未开始的任务，直接返回空数组
+    if (unstartedTags.length === 0) {
+      console.log('[SmartAd 助手] 未找到状态为“未开始”的任务');
+      sendResponse({ success: true, data: [] });
+      return;
+    }
+
+    console.log(`[SmartAd 助手] 共找到 ${unstartedTags.length} 个未开始的任务，准备开始遍历...`);
+
+    // 2. 循环遍历未开始的任务标签
+    for (let i = 0; i < unstartedTags.length; i++) {
+        const tag = unstartedTags[i];
+        
+        // 3. 提取左侧基础信息：向上查找到任务卡片容器
+        const cardContainer = tag.closest('.p-4.cursor-pointer');
+        if (!cardContainer) {
+            console.warn(`[SmartAd 助手] 第 ${i + 1} 个标签未找到父级卡片容器，已跳过`);
+            continue;
+        }
+
+        // 提取卡片的全部文本内容（用于后续正则匹配）
+        const cardText = cardContainer.innerText;
+
+        // 提取项目名称
+        const projectNameEl = cardContainer.querySelector('.truncate');
+        const projectName = projectNameEl ? projectNameEl.innerText.trim() : '未知项目';
+
+        // 提取素材类型 (包含视频或平面)
+        let materialType = '未知类型';
+        if (cardText.includes('视频')) {
+            materialType = '视频';
+        } else if (cardText.includes('平面')) {
+            materialType = '平面';
+        }
+
+        // 提取所需套数 (正则匹配 "所需X套")
+        let requiredSets = 0;
+        const setsMatch = cardText.match(/所需(\d+)套/);
+        if (setsMatch && setsMatch[1]) {
+            requiredSets = parseInt(setsMatch[1], 10);
+        }
+
+        // 4. 模拟点击与等待
+        console.log(`[SmartAd 助手] 正在点击并采集任务: 【${projectName}】...`);
+        cardContainer.click();
+        
+        // 动态等待机制：React / Vue 单页应用点击后会有明显的网络请求和转圈动画
+        // 1. 先等待初始网络请求发出的动画出现 (最多 500ms)
+        let spinnerAppeared = false;
+        for (let t = 0; t < 5; t++) {
+            await sleep(100);
+            if (document.querySelector('.ant-spin-spinning, .ant-spin-blur')) {
+                spinnerAppeared = true;
+                break;
+            }
+        }
+        
+        // 2. 等待动画彻底消失 (最多再等 5000ms)，如果没出现过就算了直接兜底等
+        if (spinnerAppeared) {
+            for (let t = 0; t < 50; t++) {
+                await sleep(100);
+                if (!document.querySelector('.ant-spin-spinning, .ant-spin-blur')) {
+                    break;
+                }
+            }
+        }
+        
+        // 3. 稳妥起见，统一再强等 1000ms 以确保文字全部渲染进纯净的 DOM 树
+        await sleep(1000);
+        
+        // 5. 提取右侧详情和全量附加字典
+        const rightPanel = document.querySelector('.ant-tabs-content-holder') || document.body;
+        const detailItems = [];
+        
+        // 5.1 获取尺寸要求
+        const sizeCards = document.querySelectorAll('section.bg-white.p-4.shadow-md');
+        if (sizeCards.length > 0) {
+            sizeCards.forEach(card => {
+                const typeName = card.querySelector('.font-bold')?.textContent.trim() || '未知版位';
+                const items = card.querySelectorAll('.mt-2.p-2'); 
+                
+                items.forEach(item => {
+                    const spans = item.querySelectorAll('span.flex.items-center.justify-center');
+                    if (spans.length >= 3) {
+                        detailItems.push({
+                            resolution: spans[0].textContent.trim(),
+                            sizeLimit: spans[1].textContent.trim(),
+                            requiredQuantity: spans[2].textContent.replace(/[^\d]/g, '').trim(),
+                            positionType: typeName 
+                        });
+                    }
+                });
+            });
+        }
+        
+        // fallback to old logic if no cards found
+        if (detailItems.length === 0) {
+            const inputs = Array.from(rightPanel.querySelectorAll('input.ant-input'));
+            const resolutionRegex = /\d+\s*[*xX]\s*\d+/;
+            const resolutionInputs = inputs.filter(input => resolutionRegex.test(input.value));
+
+            resolutionInputs.forEach(resInput => {
+                const resolution = resInput.value.trim();
+                let sizeLimit = '', requiredQuantity = '';
+                const rowWrapper = resInput.closest('.ant-row') || resInput.parentElement.parentElement;
+                if (rowWrapper) {
+                    const rowInputs = Array.from(rowWrapper.querySelectorAll('input.ant-input'));
+                    const currentIndex = rowInputs.indexOf(resInput);
+                    if (currentIndex !== -1) {
+                        if (rowInputs[currentIndex + 1]) sizeLimit = rowInputs[currentIndex + 1].value.trim();
+                        if (rowInputs[currentIndex + 2]) requiredQuantity = rowInputs[currentIndex + 2].value.trim();
+                    }
+                }
+                detailItems.push({ resolution, sizeLimit, requiredQuantity });
+            });
+        }
+
+        // 5.2 大面积从文本中提取各种“键值对”(例如: 制作人/应用类型/期望完成日期)
+        const extraData = {};
+        const lines = rightPanel.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+        
+        // 所有期望支持的字段集合
+        const knownKeys = [
+            '制作人', '制作者', '公司名称', '公司主体', '集团名称', '设计小组', '业务分组', '需求归属', 
+            '需求属性', '投放媒体', '渠道', '应用类型', '素材用途', '工具标签', '安装包链接', 
+            '参考文件', '参考图片', '参考视频', '已制素材', '业务承接', '优先级', '注意事项',
+            '需求详情', '期望完成日期', '预计交付时间', '截止日期', '任务ID', '投放预算',
+            '投放日预算', '下单方式', '下单人', '下单时间', '素材数'
+        ];
+
+        for (let j = 0; j < lines.length; j++) {
+            let line = lines[j];
+            // 过滤无用乱码行
+            if (/^[^\w\u4e00-\u9fa5]+$/.test(line) || line.length > 500) continue;
+
+            // 情境A：同在一行，如 "业务承接: AI创意素材组" 或 "业务承接： AI创意素材组"
+            const inlineMatch = line.match(/^([a-zA-Z\u4e00-\u9fa5]{2,10})\s*[：:]\s*(.+)$/);
+            if (inlineMatch) {
+                let key = inlineMatch[1].trim();
+                let val = inlineMatch[2].trim();
+                if (!extraData[key] && val && val !== '无' && val !== '/') {
+                    extraData[key] = val;
+                }
+            } else {
+                // 情境B：空格分割，如 "下单时间 2026-03-04"
+                const spaceMatch = line.match(/^([a-zA-Z\u4e00-\u9fa5]{2,10})\s+(.+)$/);
+                if(spaceMatch && knownKeys.includes(spaceMatch[1].trim())) {
+                    let key = spaceMatch[1].trim();
+                    let val = spaceMatch[2].trim();
+                    if (!extraData[key] && val && val !== '无' && val !== '/') {
+                        extraData[key] = val;
+                    }
+                } else {
+                    // 情境C：换行分布，本行为键，下一行为值
+                    const cleanLine = line.replace(/[：:]$/, '').trim();
+                    if (knownKeys.includes(cleanLine) && j + 1 < lines.length) {
+                        const nextLine = lines[j + 1];
+                        if (
+                            !knownKeys.includes(nextLine.replace(/[：:]$/, '').trim()) && 
+                            nextLine !== "复制" && nextLine !== "查看" && nextLine !== "/" &&
+                            nextLine.length < 500
+                        ) {
+                            if (!extraData[cleanLine]) {
+                                extraData[cleanLine] = nextLine;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. 组装数据并推入数组
+        extractedDataList.push({
+            projectName,
+            materialType,
+            requiredSets,
+            details: detailItems,
+            ...extraData // 将额外提取的所有附加字段全量展开合并到该条记录的顶层
+        });
+    }
+
+    console.log('[SmartAd 助手] 批量提取完成！', extractedDataList);
+    // 所有循环结束后，返回最终数据
+    sendResponse({ success: true, data: extractedDataList });
+
+  } catch (error) {
+    console.error('[SmartAd 助手] 抓取过程中发生异常:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
 // 接收来自 popup.js 的消息并执行提取
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "EXTRACT_DOM") {
+    // 原始单次抓取逻辑
     const result = extractDataFromPage();
     sendResponse(result);
+  } else if (request.action === "EXTRACT_BULK_DOM") {
+    // 新增批量抓取逻辑
+    extractBulkDataFromPageAsync(sendResponse);
+    // 必须隐式 return true 告诉 Chrome 使用异步的 sendResponse
+    return true;
   }
 });

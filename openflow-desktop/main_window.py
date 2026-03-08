@@ -20,10 +20,11 @@ class DragDropListWidget(QListWidget):
         self.setSelectionMode(QListWidget.ExtendedSelection)
         self.setStyleSheet("""
             QListWidget {
-                border: 2px dashed #aaa;
+                border: 2px dashed #666;
                 border-radius: 5px;
-                background-color: #f9f9f9;
+                background-color: transparent;
                 padding: 5px;
+                color: #eee;
             }
             QListWidget:hover { border: 2px dashed #0078D7; }
         """)
@@ -76,7 +77,10 @@ class MaterialProcessorGUI(QMainWindow):
     def init_ui(self):
         self.setWindowTitle("素材处理极简工作台 - v3.0")
         self.resize(1100, 800)
-        self.setAcceptDrops(True) # 窗口级别也支持拖拽
+        
+        # 【优化需求 1：修复主窗口无法接收拖拽】
+        # 显式开启主窗口级别的拖放接收权限，否则哪怕重写了事件，系统也会显示禁止图标
+        self.setAcceptDrops(True) 
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -127,23 +131,14 @@ class MaterialProcessorGUI(QMainWindow):
             col = idx % col_count
             
             chkbox = QCheckBox(size_str)
-            spinbox = QSpinBox()
-            spinbox.setRange(1, 999)
-            spinbox.setValue(5)
-            spinbox.setEnabled(False)
-            spinbox.setFixedWidth(50)
-            
-            chkbox.toggled.connect(spinbox.setEnabled)
             
             w = QWidget()
             l = QHBoxLayout(w)
             l.setContentsMargins(0,0,0,0)
             l.addWidget(chkbox)
-            l.addWidget(QLabel("量:"))
-            l.addWidget(spinbox)
             l.addStretch()
             
-            self.size_widgets[size_str] = {"chk": chkbox, "spin": spinbox}
+            self.size_widgets[size_str] = {"chk": chkbox}
             config_layout.addWidget(w, row, col)
             
         right_panel.addWidget(project_group)
@@ -160,8 +155,8 @@ class MaterialProcessorGUI(QMainWindow):
         dash_frame = QFrame()
         dash_frame.setStyleSheet("""
             QFrame {
-                background-color: #ffffff;
-                border: 1px solid #ddd;
+                background-color: transparent;
+                border: 1px solid #555;
                 border-radius: 8px;
             }
         """)
@@ -172,6 +167,7 @@ class MaterialProcessorGUI(QMainWindow):
         self.lbl_dashboard = QLabel("👋 欢迎！请添加文件夹。")
         self.lbl_dashboard.setAlignment(Qt.AlignCenter)
         self.lbl_dashboard.setWordWrap(True)
+        self.lbl_dashboard.setStyleSheet("color: #eee;")
         # 固定最小高度或者提供合适的 SizePolicy 可以防止在内容切换时布局猛烈跳动导致拉伸
         self.lbl_dashboard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         font_dash = QFont("Microsoft YaHei", 18, QFont.Bold)
@@ -180,6 +176,7 @@ class MaterialProcessorGUI(QMainWindow):
         self.lbl_stats_detail = QLabel("")
         self.lbl_stats_detail.setAlignment(Qt.AlignCenter)
         self.lbl_stats_detail.setWordWrap(True)
+        self.lbl_stats_detail.setStyleSheet("color: #eee;")
         self.lbl_stats_detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         font_detail = QFont("Microsoft YaHei", 10)
         self.lbl_stats_detail.setFont(font_detail)
@@ -260,7 +257,7 @@ class MaterialProcessorGUI(QMainWindow):
         for size_str, widgets in self.size_widgets.items():
             specs_data[size_str] = {
                 "checked": widgets["chk"].isChecked(),
-                "count": widgets["spin"].value()
+                "count": 0
             }
         self.settings.setValue("specs", json.dumps(specs_data))
 
@@ -275,7 +272,6 @@ class MaterialProcessorGUI(QMainWindow):
                 for size_str, data in specs_data.items():
                     if size_str in self.size_widgets:
                         self.size_widgets[size_str]["chk"].setChecked(data.get("checked", False))
-                        self.size_widgets[size_str]["spin"].setValue(data.get("count", 5))
             except json.JSONDecodeError:
                 pass
 
@@ -285,6 +281,10 @@ class MaterialProcessorGUI(QMainWindow):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
     
     def dropEvent(self, event):
         if event.mimeData().hasUrls():
@@ -292,16 +292,41 @@ class MaterialProcessorGUI(QMainWindow):
             self.add_folders_from_drop(folders)
             event.acceptProposedAction()
 
-    # 【Fix 1.3 / Fix 2】独立出列表更新与预扫描方法
+    # 【优化需求 2：智能识别项目根目录，并自动填写项目名】
     def add_folders_from_drop(self, folders):
         added = 0
+        real_folders_to_add = []
+
+        # 1. 遍历用户拖入的路径
         for f in folders:
-            # 标准化路径分隔符，避免因为斜杠问题视为不同的目录
+            # 标准化路径分隔符
             f = os.path.normpath(f)
-            if f not in self.current_folders:
-                self.current_folders.append(f)
-                self.list_folders.addItem(f)
+            if not os.path.isdir(f):
+                continue
+                
+            # 2. 获取其内部的子目录列表
+            subdirs = [os.path.join(f, name) for name in os.listdir(f) 
+                       if os.path.isdir(os.path.join(f, name))]
+
+            # 3. 关键逻辑：如果含有子目录，说明这是项目总文件夹
+            if subdirs:
+                # 提取父文件夹名称自动填入项目名称输入框 (例如: "小火车呜呜呜")
+                root_name = os.path.basename(f)
+                self.edit_project_name.setText(root_name)
+                
+                # 4. 将里面的子文件夹追加到待处理列表
+                real_folders_to_add.extend(subdirs)
+            else:
+                # 如果没有子目录，说明拖入的本身就是最终的尺寸分类文件夹
+                real_folders_to_add.append(f)
+
+        # 过滤去重，并真正添加到界面列表中
+        for real_f in real_folders_to_add:
+            if real_f not in self.current_folders:
+                self.current_folders.append(real_f)
+                self.list_folders.addItem(real_f)
                 added += 1
+                
         if added > 0:
             self.update_dashboard_ui_state(False)
             self.preload_files()
@@ -320,7 +345,7 @@ class MaterialProcessorGUI(QMainWindow):
         self.latest_report.clear()
         self.update_dashboard_ui_state(True)
         self.lbl_dashboard.setText("👋 欢迎！请添加文件夹。")
-        self.lbl_dashboard.setStyleSheet("color: #555;")
+        self.lbl_dashboard.setStyleSheet("color: #eee;")
         self.lbl_stats_detail.setText("")
 
     def update_dashboard_ui_state(self, is_cleared):
@@ -339,7 +364,7 @@ class MaterialProcessorGUI(QMainWindow):
             if widgets["chk"].isChecked():
                 # 例如用户或预设带有 "640x360"，统一规范为 "640*360"
                 normalized_size = size_str.lower().replace('x', '*').strip()
-                specs[normalized_size] = widgets["spin"].value()
+                specs[normalized_size] = 0
         return specs
 
     def toggle_log(self):
