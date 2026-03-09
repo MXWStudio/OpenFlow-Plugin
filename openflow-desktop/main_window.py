@@ -8,26 +8,17 @@ from PySide6.QtWidgets import (
     QSpinBox, QGridLayout, QGroupBox, QTreeWidget, QTreeWidgetItem,
     QFrame, QSizePolicy
 )
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QPoint
 from PySide6.QtGui import QColor, QFont, QIcon
+from pypinyin import lazy_pinyin, Style
 from main import MaterialProcessor
 
 class DragDropListWidget(QListWidget):
-    """支持拖拽文件夹的 QListWidget"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setSelectionMode(QListWidget.ExtendedSelection)
-        self.setStyleSheet("""
-            QListWidget {
-                border: 2px dashed #666;
-                border-radius: 5px;
-                background-color: transparent;
-                padding: 5px;
-                color: #333;
-            }
-            QListWidget:hover { border: 2px dashed #0078D7; }
-        """)
+        # 👇 之前这里的 self.setStyleSheet 已经被删掉了，让它乖乖听全局苹果样式的话！
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -45,15 +36,25 @@ class DragDropListWidget(QListWidget):
     def dropEvent(self, event):
         if event.mimeData().hasUrls():
             folders = []
+            json_files = [] # 收集拖进来的 json 文件
+            
             for url in event.mimeData().urls():
                 path = url.toLocalFile()
                 if os.path.isdir(path):
                     folders.append(path)
+                elif path.lower().endswith('.json'):
+                    json_files.append(path)
             
-            if folders and hasattr(self.parent(), 'add_folders_from_drop'):
-                main_win = self.window()
-                if hasattr(main_win, 'add_folders_from_drop'):
-                    main_win.add_folders_from_drop(folders)
+            main_win = self.window()
+            
+            # 如果拖入了 JSON 文件，直接解析
+            if json_files and hasattr(main_win, 'load_data_from_json'):
+                main_win.load_data_from_json(json_files[0])
+            
+            # 处理正常的文件夹拖入
+            if folders and hasattr(main_win, 'add_folders_from_drop'):
+                main_win.add_folders_from_drop(folders)
+            
             event.acceptProposedAction()
         else:
             super().dropEvent(event)
@@ -78,15 +79,82 @@ class MaterialProcessorGUI(QMainWindow):
         self.setWindowTitle("素材处理极简工作台 - v3.0")
         self.resize(1100, 800)
         
-        # 【优化需求 1：修复主窗口无法接收拖拽】
-        # 显式开启主窗口级别的拖放接收权限，否则哪怕重写了事件，系统也会显示禁止图标
-        self.setAcceptDrops(True) 
+        # === 1. 隐藏原生标题栏并设置背景透明 ===
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # 开启拖放接收
+        self.setAcceptDrops(True)
         
         central_widget = QWidget()
+        central_widget.setObjectName("CentralWidget") # 给主容器打个标签
         self.setCentralWidget(central_widget)
+        
+        # === 2. 给整个主窗口画一个深色圆角底板 ===
+        central_widget.setStyleSheet("""
+            #CentralWidget {
+                background-color: #1E1E1E;
+                border: 1px solid #38383A;
+                border-radius: 12px;
+            }
+        """)
+        
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(0, 0, 0, 0) # 去掉外边距，让标题栏贴边
+        main_layout.setSpacing(0)
+
+        # ==========================================
+        # 0. 自定义 macOS 风格红绿灯标题栏
+        # ==========================================
+        title_bar = QWidget()
+        title_bar.setFixedHeight(40)
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(15, 0, 15, 0)
+        title_layout.setSpacing(8)
+
+        btn_close = QPushButton()
+        btn_min = QPushButton()
+        btn_max = QPushButton()
+
+        for btn, color, hover_color in [
+            (btn_close, "#FF5F56", "#E0443E"),
+            (btn_min, "#FFBD2E", "#DEA125"),
+            (btn_max, "#27C93F", "#1AAB29")
+        ]:
+            btn.setFixedSize(12, 12)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    border-radius: 6px;
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; }}
+            """)
+
+        btn_close.clicked.connect(self.close)
+        btn_min.clicked.connect(self.showMinimized)
+        btn_max.clicked.connect(self.toggle_maximize)
+
+        lbl_title = QLabel("OpenFlow 素材处理工作台")
+        lbl_title.setStyleSheet("color: #98989D; font-size: 13px; font-weight: bold;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+
+        title_layout.addWidget(btn_close)
+        title_layout.addWidget(btn_min)
+        title_layout.addWidget(btn_max)
+        title_layout.addStretch()
+        title_layout.addWidget(lbl_title)
+        title_layout.addStretch()
+        spacer = QWidget()
+        spacer.setFixedWidth(52)
+        title_layout.addWidget(spacer)
+
+        main_layout.addWidget(title_bar)
+
+        # 创建内容区 Layout
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 12, 20, 20)
+        content_layout.setSpacing(15)
 
         # ==========================================
         # 1. 顶部：项目配置与文件夹拖拽区
@@ -116,11 +184,41 @@ class MaterialProcessorGUI(QMainWindow):
         # 右侧：项目与需求配置
         right_panel = QVBoxLayout()
         
-        project_group = QGroupBox("📌 项目名称")
+        project_group = QGroupBox("📌 项目配置")
         project_layout = QVBoxLayout(project_group)
+        
+        proj_input_layout = QHBoxLayout()
         self.edit_project_name = QLineEdit()
         self.edit_project_name.setPlaceholderText("例如：小火车游戏")
-        project_layout.addWidget(self.edit_project_name)
+        
+        self.btn_import_json = QPushButton("📄 导入需求 JSON")
+        self.btn_import_json.clicked.connect(self.select_json_file)
+        self.btn_import_json.setCursor(Qt.PointingHandCursor)
+        self.btn_import_json.setStyleSheet("""
+            QPushButton {
+                background-color: #3A3A3C;
+                color: #FFFFFF;
+                border: 1px solid #48484A;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #444446; border: 1px solid #0A84FF; }
+        """)
+        
+        proj_input_layout.addWidget(self.edit_project_name)
+        proj_input_layout.addWidget(self.btn_import_json)
+        project_layout.addLayout(proj_input_layout)
+
+        # 制作人缩写输入框
+        maker_layout = QHBoxLayout()
+        maker_label = QLabel("制作人缩写:")
+        maker_label.setStyleSheet("color: #98989D; font-size: 12px;")
+        self.edit_maker_abbr = QLineEdit()
+        self.edit_maker_abbr.setPlaceholderText("拼音首字母大写，如 MXW")
+        self.edit_maker_abbr.setText("MXW")
+        maker_layout.addWidget(maker_label)
+        maker_layout.addWidget(self.edit_maker_abbr)
+        project_layout.addLayout(maker_layout)
         
         config_group = QGroupBox("⚙️ 需求尺寸勾选 (左侧:横版/方型, 右侧:竖版)")
         config_layout = QGridLayout(config_group)
@@ -166,27 +264,29 @@ class MaterialProcessorGUI(QMainWindow):
         top_layout.addWidget(folder_group, stretch=2)
         top_layout.addLayout(right_panel, stretch=1)
         
-        main_layout.addLayout(top_layout)
+        content_layout.addLayout(top_layout)
 
         # ==========================================
         # 2. 中控仪表盘：极简结果展示区
         # ==========================================
         dash_frame = QFrame()
+        # 改成 Apple 风格的通知横幅 (去掉了刺眼的蓝框，换成高级灰底色)
         dash_frame.setStyleSheet("""
             QFrame {
-                background-color: transparent;
-                border: 1px solid #555;
-                border-radius: 8px;
+                background-color: #2C2C2E;
+                border: 1px solid #38383A;
+                border-radius: 10px;
             }
         """)
         dash_layout = QVBoxLayout(dash_frame)
+        dash_layout.setContentsMargins(10, 15, 10, 15) # 增加一点内部的上下留白，让它看起来更像一个卡片
         dash_layout.setAlignment(Qt.AlignCenter)
         
         # 【Fix 3】移除易导致拉伸变形的 padding 等内联样式，统一在后面通过 setFont 等方式安全修改；启用 WordWrap 和中心对齐。
         self.lbl_dashboard = QLabel("👋 欢迎！请添加文件夹。")
         self.lbl_dashboard.setAlignment(Qt.AlignCenter)
         self.lbl_dashboard.setWordWrap(True)
-        self.lbl_dashboard.setStyleSheet("color: #eee;")
+        self.lbl_dashboard.setStyleSheet("color: #FFFFFF;")
         # 固定最小高度或者提供合适的 SizePolicy 可以防止在内容切换时布局猛烈跳动导致拉伸
         self.lbl_dashboard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         font_dash = QFont("Microsoft YaHei", 18, QFont.Bold)
@@ -195,7 +295,7 @@ class MaterialProcessorGUI(QMainWindow):
         self.lbl_stats_detail = QLabel("")
         self.lbl_stats_detail.setAlignment(Qt.AlignCenter)
         self.lbl_stats_detail.setWordWrap(True)
-        self.lbl_stats_detail.setStyleSheet("color: #eee;")
+        self.lbl_stats_detail.setStyleSheet("color: #FFFFFF;")
         self.lbl_stats_detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         font_detail = QFont("Microsoft YaHei", 10)
         self.lbl_stats_detail.setFont(font_detail)
@@ -203,7 +303,7 @@ class MaterialProcessorGUI(QMainWindow):
         dash_layout.addWidget(self.lbl_dashboard)
         dash_layout.addWidget(self.lbl_stats_detail)
         
-        main_layout.addWidget(dash_frame)
+        content_layout.addWidget(dash_frame)
 
         # ==========================================
         # 3. 隐藏的树状明细日志区
@@ -239,7 +339,7 @@ class MaterialProcessorGUI(QMainWindow):
         
         # 将日志区的高度策略设为可扩展
         self.log_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        main_layout.addWidget(self.log_container)
+        content_layout.addWidget(self.log_container)
 
         # ==========================================
         # 4. 底部：核心动作大按钮
@@ -247,21 +347,133 @@ class MaterialProcessorGUI(QMainWindow):
         bottom_layout = QHBoxLayout()
         self.btn_validate = QPushButton("🔍 开始校验检测")
         self.btn_validate.setFixedHeight(50)
-        self.btn_validate.setStyleSheet("background-color: #0078D7; color: white; border-radius: 6px; font-size: 16px; font-weight: bold;")
+        self.btn_validate.setStyleSheet("""
+            QPushButton { 
+                background-color: #0A84FF; 
+                color: white; 
+                border-radius: 8px; 
+                font-size: 15px; 
+                font-weight: bold; 
+            }
+            QPushButton:hover { background-color: #0070DF; }
+        """)
         self.btn_validate.clicked.connect(self.start_validation)
 
         self.btn_rename = QPushButton("火箭起飞：一键重命名 🚀")
         self.btn_rename.setFixedHeight(50)
         self.btn_rename.setEnabled(False) 
         self.btn_rename.setStyleSheet("""
-            QPushButton { background-color: #28A745; color: white; border-radius: 6px; font-size: 16px; font-weight: bold; }
-            QPushButton:disabled { background-color: #6c757d; color: #d6d6d6; }
+            QPushButton { 
+                background-color: #32D74B; 
+                color: #000000;
+                border-radius: 8px; 
+                font-size: 15px; 
+                font-weight: bold; 
+            }
+            QPushButton:hover { background-color: #28C840; }
+            QPushButton:disabled { 
+                background-color: #3A3A3C; 
+                color: #767677; 
+            }
         """)
         self.btn_rename.clicked.connect(self.perform_rename)
         
         bottom_layout.addWidget(self.btn_validate)
         bottom_layout.addWidget(self.btn_rename)
-        main_layout.addLayout(bottom_layout)
+        content_layout.addLayout(bottom_layout)
+
+        main_layout.addLayout(content_layout)
+
+        self.apply_apple_dark_theme() # 应用苹果深色主题
+
+    # ==================== Apple 深色主题 ====================
+    def apply_apple_dark_theme(self):
+        """全局 Apple macOS 深色风格样式"""
+        apple_qss = """
+            /* 1. 全局背景与字体 */
+            QWidget {
+                background-color: #1E1E1E; /* macOS 深色模式主背景色 */
+                color: #FFFFFF;
+                font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            }
+            
+            /* 2. 模块卡片 (QGroupBox) 改造为 Apple 风格的圆角面板 */
+            QGroupBox {
+                background-color: #2C2C2E; /* 卡片底色，比主背景稍亮 */
+                border: 1px solid #38383A; /* 极弱的描边 */
+                border-radius: 10px;
+                margin-top: 28px; /* 给标题留出呼吸空间 */
+                padding: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                top: 8px;
+                color: #98989D; /* 苹果经典次级灰色 */
+                font-size: 13px;
+                font-weight: bold;
+            }
+
+            /* 3. 输入框 (QLineEdit) */
+            QLineEdit {
+                background-color: #1C1C1E;
+                border: 1px solid #38383A;
+                border-radius: 6px;
+                padding: 6px 10px;
+                color: #FFFFFF;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0A84FF; /* 苹果焦点蓝 */
+            }
+
+            /* 4. 普通按钮 (次级操作) */
+            QPushButton {
+                background-color: #3A3A3C;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #444446;
+            }
+            QPushButton:pressed {
+                background-color: #2C2C2E;
+            }
+
+            /* 5. 拖拽列表 (去掉虚线，改为更柔和的拖拽区) */
+            QListWidget {
+                background-color: #1C1C1E;
+                border: 1.5px dashed #48484A;
+                border-radius: 8px;
+                padding: 5px;
+            }
+            QListWidget:hover {
+                border: 1.5px dashed #0A84FF;
+            }
+
+            /* 6. 复选框 */
+            QCheckBox {
+                color: #D1D1D6;
+                font-size: 13px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #545458;
+                background-color: #1C1C1E;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0A84FF;
+                border: 1px solid #0A84FF;
+            }
+        """
+        self.setStyleSheet(apple_qss)
 
     # ==================== QSettings 记忆配置 ====================
     def closeEvent(self, event):
@@ -349,6 +561,23 @@ class MaterialProcessorGUI(QMainWindow):
         if added > 0:
             self.update_dashboard_ui_state(False)
             self.preload_files()
+            self.auto_check_sizes_from_folders(real_folders_to_add) # 智能识别文件夹名并自动勾选对应尺寸
+
+    def auto_check_sizes_from_folders(self, new_folders):
+        """智能识别文件夹名称并自动勾选对应尺寸"""
+        for folder_path in new_folders:
+            # 提取最后一级文件夹名称 (例如: "1280-720")
+            folder_name = os.path.basename(folder_path).lower()
+            
+            # 兼容不同的命名习惯，把减号、字母 x、下划线都临时替换成星号
+            # 例如 "1280-720" 会变成 "1280*720"
+            normalized_name = folder_name.replace('-', '*').replace('x', '*').replace('_', '*')
+            
+            # 遍历右侧面板的尺寸复选框
+            for size_str, widgets in self.size_widgets.items():
+                # 如果界面上的尺寸（如 "1280*720"）被包含在处理后的文件夹名中
+                if size_str in normalized_name:
+                    widgets["chk"].setChecked(True) # 自动打勾！
 
     def select_multiple_folders(self):
         # PyQt原生不原生支持多选目录，妥协用法：使用 QFileDialog.getOpenFileNames 拿路径然后提取目录
@@ -366,6 +595,9 @@ class MaterialProcessorGUI(QMainWindow):
         self.lbl_dashboard.setText("👋 欢迎！请添加文件夹。")
         self.lbl_dashboard.setStyleSheet("color: #eee;")
         self.lbl_stats_detail.setText("")
+        # 同步清空右侧尺寸复选框
+        for widgets in self.size_widgets.values():
+            widgets["chk"].setChecked(False)
 
     def update_dashboard_ui_state(self, is_cleared):
         self.btn_rename.setEnabled(False)
@@ -377,13 +609,13 @@ class MaterialProcessorGUI(QMainWindow):
 
     # ==================== 尺寸规格管理 ====================
     def get_required_specs(self):
-        """【Fix 4】统一规范化规格符号：全部替换 xX 为 *，去除空格"""
+        """统一规范化规格符号，并读取存储的数量要求"""
         specs = {}
         for size_str, widgets in self.size_widgets.items():
             if widgets["chk"].isChecked():
-                # 例如用户或预设带有 "640x360"，统一规范为 "640*360"
                 normalized_size = size_str.lower().replace('x', '*').strip()
-                specs[normalized_size] = 0
+                qty = widgets.get("qty", 0)  # 读取 JSON 导入时存入的数量，默认 0
+                specs[normalized_size] = qty
         return specs
 
     def toggle_log(self):
@@ -626,6 +858,7 @@ class MaterialProcessorGUI(QMainWindow):
 
     def perform_rename(self):
         project_name = self.edit_project_name.text().strip()
+        maker_abbr = self.edit_maker_abbr.text().strip().upper() or "MXW"
         if not project_name:
             QMessageBox.warning(self, "警告", "项目名称不能为空，请输入项目名后再进行重命名。")
             self.edit_project_name.setFocus()
@@ -635,7 +868,7 @@ class MaterialProcessorGUI(QMainWindow):
         failed_folders = []
         
         for folder in self.current_folders:
-            success = self.processor.rename_files(folder, project_name)
+            success = self.processor.rename_files(folder, project_name, maker_abbr)
             if not success:
                 all_success = False
                 failed_folders.append(os.path.basename(folder))
@@ -650,6 +883,122 @@ class MaterialProcessorGUI(QMainWindow):
             QMessageBox.information(self, "完成", "✅ 批量重命名已全部顺利下发！")
         else:
             QMessageBox.critical(self, "部分错误", f"重命名过程中遇到失败！\n失败的文件夹有：{', '.join(failed_folders)}")
+
+    # ==================== 窗口控制与拖拽逻辑 ====================
+    def toggle_maximize(self):
+        """点击绿色按鈕时切换最大化/还原"""
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def mousePressEvent(self, event):
+        """鼠标按下时，判断是否在标题栏区域内，以允许拖动窗口"""
+        if event.button() == Qt.LeftButton and event.position().y() < 40:
+            self._is_tracking = True
+            self._start_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """鼠标移动时，更新窗口位置"""
+        if getattr(self, '_is_tracking', False):
+            self.move(event.globalPosition().toPoint() - self._start_pos)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """鼠标松开，结束拖拽"""
+        if event.button() == Qt.LeftButton:
+            self._is_tracking = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    # ==================== JSON 导入解析逻辑 ====================
+    def select_json_file(self):
+        """手动点击按鈕选择 JSON 文件"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择需求 JSON 文件", "", "JSON Files (*.json)")
+        if file_path:
+            self.load_data_from_json(file_path)
+
+    def load_data_from_json(self, json_path):
+        """核心解析逻辑：读取 JSON 并自动填入项目名和勾选尺寸"""
+        try:
+            # 预处理：剥离 // 注释（Chrome 插件可能产生非标准 JSON）
+            import re
+            with open(json_path, 'r', encoding='utf-8') as f:
+                raw = f.read()
+            clean = re.sub(r'//[^\n]*', '', raw)
+            data = json.loads(clean)
+
+            # 兼容批量模板 (JSON外层是个列表)
+            from PySide6.QtWidgets import QInputDialog
+            if isinstance(data, list):
+                if not data:
+                    raise ValueError("JSON 列表为空")
+                
+                if len(data) == 1:
+                    data = data[0]
+                else:
+                    # 获取所有项目名称供用户选择
+                    project_names = [f"{item.get('项目名称', '未知项目')} ({item.get('日期', '')})" for item in data]
+                    item, ok = QInputDialog.getItem(self, "选择要导入的项目", "此 JSON 包含多个项目，请选择：", project_names, 0, False)
+                    if ok and item:
+                        selected_index = project_names.index(item)
+                        data = data[selected_index]
+                    else:
+                        return # 用户取消选择
+
+            if not isinstance(data, dict):
+                raise ValueError("JSON 格式不正确，期望是一个项目对象")
+
+            # 1. 自动填入项目名称
+            project_name = data.get("项目名称", "")
+            if project_name:
+                self.edit_project_name.setText(project_name)
+
+            # 2. 自动计算制作人缩写（拼音首字母全大写）
+            maker_name = data.get("制作人", "")
+            if maker_name:
+                initials = "".join(lazy_pinyin(maker_name, style=Style.FIRST_LETTER)).upper()
+                self.edit_maker_abbr.setText(initials)
+
+            # 3. 先清空并重置所有勾选状态和数量
+            for widgets in self.size_widgets.values():
+                widgets["chk"].setChecked(False)
+                widgets["qty"] = 0
+
+            # 4. 遍历 JSON 里的尺寸并自动打勾，同时存入所需数量
+            details = data.get("尺寸要求明细", [])
+            matched_count = 0
+            for detail in details:
+                if not isinstance(detail, dict):
+                    continue
+                    
+                res = detail.get("分辨率")
+                if not res:
+                    continue  # 忽略混在里面的“其他信息”等无分辨率字典
+                    
+                norm_res = res.lower().replace('x', '*').replace('-', '*').strip()
+                qty = int(detail.get("所需数量", 0) or 0)
+                
+                if norm_res in self.size_widgets:
+                    self.size_widgets[norm_res]["chk"].setChecked(True)
+                    self.size_widgets[norm_res]["qty"] = qty  # 存入数量
+                    matched_count += 1
+
+            # 5. 给出反馈提示
+            maker_abbr = self.edit_maker_abbr.text()
+            self.lbl_dashboard.setText(f"📄 已加载配置：{project_name} | 制作人：{maker_name} ({maker_abbr})")
+            self.lbl_dashboard.setStyleSheet("color: #32D74B;")
+            self.lbl_stats_detail.setText(f"已自动勾选 {matched_count} 项尺寸需求，将按数量校验。")
+
+        except Exception as e:
+            QMessageBox.warning(self, "读取 JSON 失败", f"无法解析该文件，请检查格式。\n{e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

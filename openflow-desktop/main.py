@@ -121,11 +121,12 @@ class MaterialProcessor:
 
         return report
 
-    def rename_files(self, folder_path: str, project_name: str) -> bool:
+    def rename_files(self, folder_path: str, project_name: str, maker_abbr: str = "MXW") -> bool:
         """
         依据公式自动重命名文件夹中的资源，应在 validate_folder 确认达标后调用
         :param folder_path: 目标文件夹路径
         :param project_name: 变量名 - 项目游戏名
+        :param maker_abbr: 制作人缩写（全大写），例如 MXW
         :return: True 表示处理完毕，False 表示执行时发生中断及错误
         """
         try:
@@ -157,14 +158,14 @@ class MaterialProcessor:
                 
                 # 分配新文件名
                 if ext_lower in self.supported_video_exts:
-                    # 视频逻辑：RSyyyymmdd-项目游戏名-MXW-奇觅-横竖-(序列号).mp4
+                    # 视频逻辑：RSyyyymmdd-项目游戏名-制作人缩写-奇觅-横竖-(序列号).mp4
                     orientation = "横" if width >= height else "竖"
-                    base_new_name = f"RS{today_str}-{project_name}-MXW-奇觅-{orientation}-({video_seq}){ext_lower}"
+                    base_new_name = f"RS{today_str}-{project_name}-{maker_abbr}-奇觅-{orientation}-({video_seq}){ext_lower}"
                     video_seq += 1
                 else:
-                    # 图片逻辑：RSQyyyymmdd-项目游戏名-版位尺寸-MXW-(序列号).jpg/png
+                    # 图片逻辑：RSQyyyymmdd-项目游戏名-版位尺寸-制作人缩写-(序列号).jpg/png
                     size_str = f"{width}x{height}"
-                    base_new_name = f"RSQ{today_str}-{project_name}-{size_str}-MXW-({image_seq}){ext_lower}"
+                    base_new_name = f"RSQ{today_str}-{project_name}-{size_str}-{maker_abbr}-({image_seq}){ext_lower}"
                     image_seq += 1
 
                 new_file_path = os.path.join(folder_path, base_new_name)

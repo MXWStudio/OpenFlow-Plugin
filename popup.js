@@ -169,12 +169,13 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         }
 
         const details = task.details || [];
+        const makerName = task["制作人"] || task["制作者"] || "孟祥伟";
 
         // 组装头部字段
         if (isGraphic) {
             // 平面模板 (14个字段)
             orderedData["日期"] = dateStr;
-            orderedData["制作人"] = "孟祥伟";
+            orderedData["制作人"] = makerName;
             orderedData["项目名称"] = gameName;
             orderedData["公司名称"] = companyName;
             orderedData["集团"] = companyName;
@@ -192,7 +193,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         } else {
             // 视频模板 (13个字段)
             orderedData["日期"] = dateStr;
-            orderedData["制作人"] = "孟祥伟";
+            orderedData["制作人"] = makerName;
             orderedData["项目名称"] = gameName;
             orderedData["公司名称"] = companyName;
             orderedData["集团"] = companyName;
@@ -202,7 +203,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
             orderedData["渠道"] = mediaChannel;
             orderedData["素材类型"] = "视频";
             orderedData["工具标签"] = "奇觅";
-            orderedData["视频总产出"] = rawMaterialCount;
+            orderedData["视频总产出"] = String(rawMaterialCount);
             orderedData["原创视频"] = rawMaterialCount;
         }
 
@@ -229,12 +230,12 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
                 "版位类型": d.positionType || (isGraphic ? "平面" : "视频"),
                 "分辨率": d.resolution,
                 "大小限制": d.sizeLimit,
-                "所需数量": d.requiredQuantity
+                "所需数量": String(d.requiredQuantity)
             };
         });
         
-        cleanDetails.push(extraAttributesMap);
         orderedData["尺寸要求明细"] = cleanDetails;
+        orderedData["其他信息"] = extraAttributesMap;
 
         return orderedData;
     });
@@ -244,12 +245,13 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
     const blob = new Blob([jsonStr], {type: "application/json;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     
-    // 如果只有一条数据，直接使用该项目的名称作为文件名；多条则用固定名称
-    const fileBaseName = formattedDataList.length === 1 
-        ? formattedDataList[0]["项目名称"].replace(/[<>:"/\\|?*]/g, "") 
-        : `批量需求抓取_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '')}`;
+    // 按照指定格式命名：yyyymmdd-制作人名字数据表.json
+    const d = new Date();
+    const yyyymmdd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    const finalMakerName = formattedDataList.length > 0 ? formattedDataList[0]["制作人"] : "孟祥伟";
+    const fileName = `${yyyymmdd}-${finalMakerName}数据表.json`;
 
-    chrome.downloads.download({ url: url, filename: `${fileBaseName}.json` });
+    chrome.downloads.download({ url: url, filename: fileName });
 });
     
 // 4. 导出 CSV 功能
@@ -295,13 +297,15 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
                 const match = String(rawSets).match(/\d+/);
                 if (match) rawMaterialCount = parseInt(match[0], 10);
             }
+            
+            const makerName = task["制作人"] || task["制作者"] || "孟祥伟";
 
             let row = [];
             if (isGraphic) {
                 const details = task.details || [];
                 const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity) || 0), 0) || (rawMaterialCount * details.length);
                 row = [
-                    dateStr, "孟祥伟", gameName, companyName, companyName,
+                    dateStr, makerName, gameName, companyName, companyName,
                     task["需求方"] || "移动终端事业部", "非网易",
                     task["需求归属"] || task["业务分组"] || "移动终端-IAA", "竞价",
                     task["需求属性"] || task["素材用途"] || "代投", mediaChannel,
@@ -309,7 +313,7 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
                 ];
             } else {
                 row = [
-                    dateStr, "孟祥伟", gameName, companyName, companyName,
+                    dateStr, makerName, gameName, companyName, companyName,
                     "AIGC组", "移动终端-IAA", "代投", mediaChannel,
                     "视频", "奇觅", rawMaterialCount, rawMaterialCount
                 ];
