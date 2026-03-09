@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QTableWidget, QTableWidgetItem,
     QFileDialog, QMessageBox, QHeaderView, QListWidget, QCheckBox, 
     QSpinBox, QGridLayout, QGroupBox, QTreeWidget, QTreeWidgetItem,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QInputDialog, QDialog
 )
 from PySide6.QtCore import Qt, QSettings, QPoint
 from PySide6.QtGui import QColor, QFont, QIcon
@@ -71,6 +71,7 @@ class MaterialProcessorGUI(QMainWindow):
         
         # 配置文件保存
         self.settings = QSettings("MyCompany", "MaterialProcessor")
+        self.full_json_data = [] # 新增：保存完整的 JSON 导入数据
         
         self.init_ui()
         self.load_settings()
@@ -157,7 +158,49 @@ class MaterialProcessorGUI(QMainWindow):
         content_layout.setSpacing(15)
 
         # ==========================================
-        # 1. 顶部：项目配置与文件夹拖拽区
+        # 1. 顶部隔离区：项目初始化 (新增)
+        # ==========================================
+        init_group = QGroupBox("🚀 第一步：项目初始化与文件夹生成")
+        init_group.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #0A84FF; }")
+        init_layout = QHBoxLayout(init_group)
+        
+        self.edit_project_name = QLineEdit()
+        self.edit_project_name.setPlaceholderText("项名称 (如：小火车呜呜呜)")
+        
+        self.btn_import_json = QPushButton("📄 导入需求 JSON")
+        self.btn_import_json.clicked.connect(self.select_json_file)
+        self.btn_import_json.setStyleSheet("""
+            QPushButton {
+                background-color: #3A3A3C;
+                color: #FFFFFF;
+                padding: 12px 25px;
+                font-size: 14px;
+            }
+            QPushButton:hover { background-color: #444446; border: 1px solid #0A84FF; }
+        """)
+        
+        self.btn_init_folders = QPushButton("📂 一键初始化文件夹")
+        self.btn_init_folders.clicked.connect(self.init_project_folders)
+        self.btn_init_folders.setStyleSheet("""
+            QPushButton {
+                background-color: #0A84FF;
+                color: #FFFFFF;
+                font-weight: bold;
+                padding: 12px 25px;
+                font-size: 14px;
+            }
+            QPushButton:hover { background-color: #0070DF; }
+        """)
+        
+        init_layout.addWidget(QLabel("项目名:"))
+        init_layout.addWidget(self.edit_project_name, stretch=1)
+        init_layout.addWidget(self.btn_import_json)
+        init_layout.addWidget(self.btn_init_folders)
+        
+        content_layout.addWidget(init_group)
+
+        # ==========================================
+        # 2. 中部：文件夹拖拽区与尺寸配置
         # ==========================================
         top_layout = QHBoxLayout()
         
@@ -184,31 +227,9 @@ class MaterialProcessorGUI(QMainWindow):
         # 右侧：项目与需求配置
         right_panel = QVBoxLayout()
         
-        project_group = QGroupBox("📌 项目配置")
+        project_group = QGroupBox("📌 重命名配置")
         project_layout = QVBoxLayout(project_group)
         
-        proj_input_layout = QHBoxLayout()
-        self.edit_project_name = QLineEdit()
-        self.edit_project_name.setPlaceholderText("例如：小火车游戏")
-        
-        self.btn_import_json = QPushButton("📄 导入需求 JSON")
-        self.btn_import_json.clicked.connect(self.select_json_file)
-        self.btn_import_json.setCursor(Qt.PointingHandCursor)
-        self.btn_import_json.setStyleSheet("""
-            QPushButton {
-                background-color: #3A3A3C;
-                color: #FFFFFF;
-                border: 1px solid #48484A;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover { background-color: #444446; border: 1px solid #0A84FF; }
-        """)
-        
-        proj_input_layout.addWidget(self.edit_project_name)
-        proj_input_layout.addWidget(self.btn_import_json)
-        project_layout.addLayout(proj_input_layout)
-
         # 制作人缩写输入框
         maker_layout = QHBoxLayout()
         maker_label = QLabel("制作人缩写:")
@@ -935,8 +956,10 @@ class MaterialProcessorGUI(QMainWindow):
             data = json.loads(clean)
 
             # 兼容批量模板 (JSON外层是个列表)
-            from PySide6.QtWidgets import QInputDialog
+            # 确保 full_json_data 在 __init__ 中初始化为 []
+            # 并在每次加载 JSON 时，如果 JSON 是列表，则更新 full_json_data
             if isinstance(data, list):
+                self.full_json_data = data # 保存完整列表供批量初始化使用
                 if not data:
                     raise ValueError("JSON 列表为空")
                 
@@ -945,8 +968,36 @@ class MaterialProcessorGUI(QMainWindow):
                 else:
                     # 获取所有项目名称供用户选择
                     project_names = [f"{item.get('项目名称', '未知项目')} ({item.get('日期', '')})" for item in data]
-                    item, ok = QInputDialog.getItem(self, "选择要导入的项目", "此 JSON 包含多个项目，请选择：", project_names, 0, False)
-                    if ok and item:
+                    
+                    dialog = QInputDialog(self)
+                    dialog.setWindowTitle("选择要导入的项目")
+                    dialog.setLabelText("此 JSON 包含多个项目，请选择：")
+                    dialog.setComboBoxItems(project_names)
+                    dialog.setComboBoxEditable(False)
+                    dialog.setOkButtonText("✅ 确认导入所选")
+                    dialog.setCancelButtonText("❌ 取消")
+                    
+                    # 强制增大按钮和下拉框尺寸
+                    dialog.setStyleSheet("""
+                        QPushButton { 
+                            min-width: 150px; 
+                            min-height: 45px; 
+                            font-size: 14px; 
+                            font-weight: bold;
+                        }
+                        QComboBox {
+                            min-height: 40px;
+                            font-size: 14px;
+                            padding-left: 10px;
+                        }
+                        QLabel {
+                            font-size: 14px;
+                            margin-bottom: 5px;
+                        }
+                    """)
+                    
+                    if dialog.exec() == QDialog.Accepted:
+                        item = dialog.textValue()
                         selected_index = project_names.index(item)
                         data = data[selected_index]
                     else:
@@ -998,6 +1049,122 @@ class MaterialProcessorGUI(QMainWindow):
 
         except Exception as e:
             QMessageBox.warning(self, "读取 JSON 失败", f"无法解析该文件，请检查格式。\n{e}")
+
+    def init_project_folders(self):
+        """根据已导入的需求一键创建文件夹结构 (支持批量模式)"""
+        project_name = self.edit_project_name.text().strip()
+        if not project_name and not self.full_json_data:
+            QMessageBox.warning(self, "未指定项目", "请先输入项目名称或导入需求 JSON！")
+            return
+
+        # 1. 检查是否存在批量数据
+        items_to_process = []
+        is_batch = False
+        
+        if len(self.full_json_data) > 1:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("批量创建确认")
+            msg_box.setText(f"检测到 JSON 中包含 {len(self.full_json_data)} 个项目。\n\n是否要【批量一次性】创建所有项目的目录？\n\n(选“否”则仅创建当前界面显示的单个项目)")
+            msg_box.setIcon(QMessageBox.Question)
+            
+            btn_yes = msg_box.addButton("✅ 批量创建所有", QMessageBox.YesRole)
+            btn_no = msg_box.addButton("👤 仅创建当前这一个", QMessageBox.NoRole)
+            btn_cancel = msg_box.addButton("❌ 取消", QMessageBox.RejectRole)
+            
+            # 强制增大按钮！
+            msg_box.setStyleSheet("""
+                QPushButton { 
+                    min-width: 160px; 
+                    min-height: 45px; 
+                    font-size: 14px; 
+                    font-weight: bold;
+                    margin: 5px;
+                    padding: 10px;
+                }
+            """)
+            
+            msg_box.exec()
+            clicked_btn = msg_box.clickedButton()
+            
+            if clicked_btn == btn_cancel:
+                return
+            elif clicked_btn == btn_yes:
+                items_to_process = self.full_json_data
+                is_batch = True
+        
+        if not items_to_process:
+            # 单个项目模式，使用当前 UI 上的信息
+            if not project_name:
+                QMessageBox.warning(self, "未指定项目", "当前项目名为空，无法创建。")
+                return
+            
+            # 手动构建当前项目的结构
+            current_specs = []
+            for size_str, widgets in self.size_widgets.items():
+                if widgets["chk"].isChecked():
+                    current_specs.append({"分辨率": size_str})
+            
+            items_to_process = [{
+                "项目名称": project_name,
+                "尺寸要求明细": current_specs
+            }]
+
+        # 2. 让用户选择根目录
+        root_dir = QFileDialog.getExistingDirectory(self, "选择项目存放的总根目录", "")
+        if not root_dir:
+            return
+
+        try:
+            total_projects = 0
+            total_folders = 0
+            # 固定 4 个 2 级空文件夹
+            fixed_folders = ["截屏素材", "录屏素材", "奇觅生成", "模糊处理"]
+            results_log = []
+
+            # 3. 循环处理每一个项目
+            for item in items_to_process:
+                curr_proj_name = item.get("项目名称", "").strip()
+                if not curr_proj_name:
+                    continue
+                
+                project_root = os.path.join(root_dir, curr_proj_name)
+                os.makedirs(project_root, exist_ok=True)
+                
+                # 收集二级目录
+                subfolders = []
+                details = item.get("尺寸要求明细", [])
+                for d in details:
+                    if isinstance(d, dict) and d.get("分辨率"):
+                        # "1280*720" -> "1280-720"
+                        res = d.get("分辨率").replace('*', '-')
+                        if res not in subfolders:
+                            subfolders.append(res)
+                
+                subfolders.extend(fixed_folders)
+                
+                # 创建子目录
+                proj_created_count = 0
+                for sub in subfolders:
+                    target_path = os.path.join(project_root, sub)
+                    if not os.path.exists(target_path):
+                        os.makedirs(target_path, exist_ok=True)
+                        proj_created_count += 1
+                        total_folders += 1
+                
+                total_projects += 1
+                results_log.append(f"- {curr_proj_name} (创建 {proj_created_count} 个子目录)")
+
+            # 4. 反馈结果
+            if total_projects > 0:
+                summary = f"🎉 {'批量' if is_batch else '项目'}初始化完成！\n\n共处理项目：{total_projects} 个\n共创建文件夹：{total_folders} 个\n\n详情：\n" + "\n".join(results_log[:15])
+                if len(results_log) > 15:
+                    summary += f"\n... 以及其他 {len(results_log)-15} 个项目"
+                QMessageBox.information(self, "初始化成功", summary)
+            else:
+                QMessageBox.warning(self, "初始化未执行", "未找到有效的项目数据进行创建。")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "创建失败", f"处理过程中发生错误：{e}")
 
 
 if __name__ == "__main__":
