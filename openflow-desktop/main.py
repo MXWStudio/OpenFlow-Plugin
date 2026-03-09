@@ -157,9 +157,9 @@ class MaterialProcessor:
                 
                 # 分配新文件名
                 if ext_lower in self.supported_video_exts:
-                    # 视频逻辑：RSyyyymmdd-项目游戏名-MXW-横竖-(序列号).mp4
+                    # 视频逻辑：RSyyyymmdd-项目游戏名-MXW-奇觅-横竖-(序列号).mp4
                     orientation = "横" if width >= height else "竖"
-                    base_new_name = f"RS{today_str}-{project_name}-MXW-{orientation}-({video_seq}){ext_lower}"
+                    base_new_name = f"RS{today_str}-{project_name}-MXW-奇觅-{orientation}-({video_seq}){ext_lower}"
                     video_seq += 1
                 else:
                     # 图片逻辑：RSQyyyymmdd-项目游戏名-版位尺寸-MXW-(序列号).jpg/png

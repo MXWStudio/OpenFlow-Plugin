@@ -24,7 +24,7 @@ class DragDropListWidget(QListWidget):
                 border-radius: 5px;
                 background-color: transparent;
                 padding: 5px;
-                color: #eee;
+                color: #333;
             }
             QListWidget:hover { border: 2px dashed #0078D7; }
         """)
