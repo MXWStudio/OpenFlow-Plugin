@@ -64,8 +64,8 @@ class MaterialProcessorGUI(QMainWindow):
         self.processor = MaterialProcessor()
         self.current_folders = []
         
-        self.preset_sizes = ["1280*720", "720*1280", "1920*1080", "1080*1920", "640*360", "1080*607"]
-        self.size_widgets = {} 
+        self.preset_sizes = ["1280*720", "720*1280", "1920*1080", "1080*1920", "640*360", "1080*607", "1080*170", "900*900", "1080*1620", "160*160"]
+        self.size_widgets = {}
         self.latest_report = [] 
         
         # 配置文件保存
@@ -122,24 +122,43 @@ class MaterialProcessorGUI(QMainWindow):
         self.edit_project_name.setPlaceholderText("例如：小火车游戏")
         project_layout.addWidget(self.edit_project_name)
         
-        config_group = QGroupBox("⚙️ 需求尺寸勾选")
+        config_group = QGroupBox("⚙️ 需求尺寸勾选 (左侧:横版/方型, 右侧:竖版)")
         config_layout = QGridLayout(config_group)
         
-        col_count = 2 # 节省空间，右侧较窄
-        for idx, size_str in enumerate(self.preset_sizes):
-            row = idx // col_count
-            col = idx % col_count
-            
-            chkbox = QCheckBox(size_str)
-            
-            w = QWidget()
-            l = QHBoxLayout(w)
-            l.setContentsMargins(0,0,0,0)
-            l.addWidget(chkbox)
-            l.addStretch()
-            
-            self.size_widgets[size_str] = {"chk": chkbox}
-            config_layout.addWidget(w, row, col)
+        horizontal_sizes = []
+        vertical_sizes = []
+        for size_str in self.preset_sizes:
+            parts = size_str.split('*')
+            if len(parts) == 2 and int(parts[0]) < int(parts[1]):
+                vertical_sizes.append(size_str)
+            else:
+                horizontal_sizes.append(size_str)
+                
+        max_rows = max(len(horizontal_sizes), len(vertical_sizes))
+        for row in range(max_rows):
+            # 左侧：横版/正方形 (Column 0)
+            if row < len(horizontal_sizes):
+                size_str = horizontal_sizes[row]
+                chkbox = QCheckBox(size_str)
+                w = QWidget()
+                l = QHBoxLayout(w)
+                l.setContentsMargins(0,0,0,0)
+                l.addWidget(chkbox)
+                l.addStretch()
+                self.size_widgets[size_str] = {"chk": chkbox}
+                config_layout.addWidget(w, row, 0)
+                
+            # 右侧：竖版 (Column 1)
+            if row < len(vertical_sizes):
+                size_str = vertical_sizes[row]
+                chkbox = QCheckBox(size_str)
+                w = QWidget()
+                l = QHBoxLayout(w)
+                l.setContentsMargins(0,0,0,0)
+                l.addWidget(chkbox)
+                l.addStretch()
+                self.size_widgets[size_str] = {"chk": chkbox}
+                config_layout.addWidget(w, row, 1)
             
         right_panel.addWidget(project_group)
         right_panel.addWidget(config_group)
