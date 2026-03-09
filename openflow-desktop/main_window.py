@@ -78,11 +78,20 @@ class MaterialProcessorGUI(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("素材处理极简工作台 - v3.0")
-        self.resize(1100, 800)
+        self.resize(1100, 1200)
         
-        # === 1. 隐藏原生标题栏并设置背景透明 ===
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        # === 1. 设置窗口可缩放并保持自定义风格 ===
+        # 为了支持全局缩放，我们移除完全无边框限制，或者保留但允许拉伸
+        # 这里我们选择保留自定义样式，但确保窗口 flags 允许缩放
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # 添加右下角缩放手柄
+        from PySide6.QtWidgets import QSizeGrip
+        self.size_grip = QSizeGrip(self)
+        self.size_grip.setFixedSize(15, 15)
+        self.size_grip.setCursor(Qt.SizeFDiagCursor)
+        self.size_grip.setStyleSheet("background: transparent;")
         
         # 开启拖放接收
         self.setAcceptDrops(True)
@@ -105,57 +114,66 @@ class MaterialProcessorGUI(QMainWindow):
         main_layout.setSpacing(0)
 
         # ==========================================
-        # 0. 自定义 macOS 风格红绿灯标题栏
+        # 0. 自定义 VSCode 风格标题栏
         # ==========================================
         title_bar = QWidget()
-        title_bar.setFixedHeight(40)
+        title_bar.setObjectName("TitleBar")
+        title_bar.setFixedHeight(35)
+        # 修复顶部圆角：必须在这里明确设置 title_bar 的背景和圆角，
+        # 且 radius 必须与 central_widget 保持一致 (12px)
+        title_bar.setStyleSheet("""
+            #TitleBar {
+                background-color: #252526;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+            }
+        """)
         title_layout = QHBoxLayout(title_bar)
-        title_layout.setContentsMargins(15, 0, 15, 0)
-        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(15, 0, 0, 0)
+        title_layout.setSpacing(0)
 
-        btn_close = QPushButton()
-        btn_min = QPushButton()
-        btn_max = QPushButton()
+        lbl_title = QLabel("OpenFlow 素材处理工作台")
+        lbl_title.setStyleSheet("color: #CCCCCC; font-size: 12px;")
+        
+        # 窗口控制按钮 (VSCode 风格)
+        btn_min = QPushButton("－")
+        btn_max = QPushButton("▢")
+        btn_close = QPushButton("✕")
 
-        for btn, color, hover_color in [
-            (btn_close, "#FF5F56", "#E0443E"),
-            (btn_min, "#FFBD2E", "#DEA125"),
-            (btn_max, "#27C93F", "#1AAB29")
+        for btn, hover_color in [
+            (btn_min, "#3F3F41"),
+            (btn_max, "#3F3F41"),
+            (btn_close, "#E81123")
         ]:
-            btn.setFixedSize(12, 12)
+            btn.setFixedSize(45, 35)
+            btn.setFlat(True)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: {color};
-                    border-radius: 6px;
+                    color: #CCCCCC;
                     border: none;
+                    font-size: 15px;
                 }}
-                QPushButton:hover {{ background-color: {hover_color}; }}
+                QPushButton:hover {{ background-color: {hover_color}; color: white; }}
             """)
 
         btn_close.clicked.connect(self.close)
         btn_min.clicked.connect(self.showMinimized)
         btn_max.clicked.connect(self.toggle_maximize)
 
-        lbl_title = QLabel("OpenFlow 素材处理工作台")
-        lbl_title.setStyleSheet("color: #98989D; font-size: 13px; font-weight: bold;")
-        lbl_title.setAlignment(Qt.AlignCenter)
-
-        title_layout.addWidget(btn_close)
-        title_layout.addWidget(btn_min)
-        title_layout.addWidget(btn_max)
-        title_layout.addStretch()
         title_layout.addWidget(lbl_title)
         title_layout.addStretch()
-        spacer = QWidget()
-        spacer.setFixedWidth(52)
-        title_layout.addWidget(spacer)
+        title_layout.addWidget(btn_min)
+        title_layout.addWidget(btn_max)
+        title_layout.addWidget(btn_close)
 
+        # 添加一个窗口拉伸区域（由于是 Frameless 窗口，我们需要手动处理边缘拉伸，或者使用 sizeGrip）
+        # 这里简单起见，配合 layout 伸缩和 QSizeGrip
         main_layout.addWidget(title_bar)
-
-        # 创建内容区 Layout
+        
+        # 内容区域
         content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(20, 12, 20, 20)
-        content_layout.setSpacing(15)
+        content_layout.setContentsMargins(15, 10, 15, 10)
+        content_layout.setSpacing(12)
 
         # ==========================================
         # 1. 顶部隔离区：项目初始化 (新增)
@@ -290,6 +308,9 @@ class MaterialProcessorGUI(QMainWindow):
                 horizontal_sizes.append(size_str)
                 
         max_rows = max(len(horizontal_sizes), len(vertical_sizes))
+        # 重要：先重置 size_widgets
+        self.size_widgets = {}
+        
         for row in range(max_rows):
             # 左侧：横版/正方形 (Column 0)
             if row < len(horizontal_sizes):
@@ -300,7 +321,7 @@ class MaterialProcessorGUI(QMainWindow):
                 l.setContentsMargins(0,0,0,0)
                 l.addWidget(chkbox)
                 l.addStretch()
-                self.size_widgets[size_str] = {"chk": chkbox}
+                self.size_widgets[size_str] = {"chk": chkbox, "qty": 0} # 确保初始化 qty
                 config_layout.addWidget(w, row, 0)
                 
             # 右侧：竖版 (Column 1)
@@ -312,16 +333,21 @@ class MaterialProcessorGUI(QMainWindow):
                 l.setContentsMargins(0,0,0,0)
                 l.addWidget(chkbox)
                 l.addStretch()
-                self.size_widgets[size_str] = {"chk": chkbox}
+                self.size_widgets[size_str] = {"chk": chkbox, "qty": 0} # 确保初始化 qty
                 config_layout.addWidget(w, row, 1)
             
         right_panel.addWidget(project_group)
         right_panel.addWidget(config_group)
         
+        # 【关键修复】确保 top_layout 包含了所有子组件
         top_layout.addWidget(folder_group, stretch=2)
         top_layout.addLayout(right_panel, stretch=1)
         
-        content_layout.addLayout(top_layout)
+        # 将中部区域包装进一个 Widget 中，以便放入 Splitter
+        mid_widget = QWidget()
+        mid_widget.setLayout(top_layout)
+        mid_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        mid_widget.setMinimumHeight(280)
 
         # ==========================================
         # 3. 隐藏的树状明细日志区
@@ -348,16 +374,43 @@ class MaterialProcessorGUI(QMainWindow):
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["分类 / 文件名", "所属", "格式", "尺寸", "状态", "详情"])
         self.tree.setAlternatingRowColors(True)
-        self.tree.setColumnWidth(0, 300)
-        self.tree.setColumnWidth(1, 100)
-        self.tree.setVisible(False) # 默认隐藏
+        # 设置自动伸缩列
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.tree.setColumnWidth(1, 120)
+        self.tree.setColumnWidth(2, 60)
+        self.tree.setColumnWidth(3, 100)
+        self.tree.setVisible(True) # 默认隐藏
         
         log_layout.addLayout(log_header)
         log_layout.addWidget(self.tree)
         
         # 将日志区的高度策略设为可扩展
-        self.log_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        content_layout.addWidget(self.log_container)
+        self.log_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.log_container.setMinimumHeight(150)
+        
+        # --- 创建垂直分割条 ---
+        from PySide6.QtWidgets import QSplitter
+        self.v_splitter = QSplitter(Qt.Vertical)
+        self.v_splitter.addWidget(mid_widget)
+        self.v_splitter.addWidget(self.log_container)
+        
+        # 设置初始伸缩比例 (配置区 1 : 日志区 1)
+        self.v_splitter.setStretchFactor(0, 1)
+        self.v_splitter.setStretchFactor(1, 1)
+        # 允许拉动
+        self.v_splitter.setHandleWidth(6)
+        self.v_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #38383A;
+                min-height: 2px;
+            }
+            QSplitter::handle:hover {
+                background-color: #0A84FF;
+            }
+        """)
+        
+        content_layout.addWidget(self.v_splitter)
 
         # ==========================================
         # 4. 底部：核心动作大按钮
@@ -500,28 +553,47 @@ class MaterialProcessorGUI(QMainWindow):
         super().closeEvent(event)
 
     def save_settings(self):
-        self.settings.setValue("project_name", self.edit_project_name.text())
-        
+        try:
+            self.settings.setValue("project_name", self.edit_project_name.text())
+        except Exception:
+            pass
+            
         specs_data = {}
+        # 在循环外导入
+        try:
+            import shiboken6
+        except ImportError:
+            shiboken6 = None
+            
         for size_str, widgets in self.size_widgets.items():
-            specs_data[size_str] = {
-                "checked": widgets["chk"].isChecked(),
-                "count": 0
-            }
+            try:
+                if "chk" in widgets:
+                    chk = widgets["chk"]
+                    # 检查 C++ 对象是否还存活
+                    if shiboken6 and shiboken6.isValid(chk):
+                        specs_data[size_str] = {
+                            "checked": chk.isChecked(),
+                            "count": 0
+                        }
+            except Exception:
+                continue
         self.settings.setValue("specs", json.dumps(specs_data))
 
     def load_settings(self):
         proj_name = self.settings.value("project_name", "小火车游戏")
-        self.edit_project_name.setText(proj_name)
+        self.edit_project_name.setText(str(proj_name)) # 确保转为字符串
         
         specs_json = self.settings.value("specs", "")
         if specs_json:
             try:
                 specs_data = json.loads(specs_json)
                 for size_str, data in specs_data.items():
+                    # 安全检查：确保 widgets 字典和 chk 对象都有效
                     if size_str in self.size_widgets:
-                        self.size_widgets[size_str]["chk"].setChecked(data.get("checked", False))
-            except json.JSONDecodeError:
+                        widgets = self.size_widgets[size_str]
+                        if "chk" in widgets and not widgets["chk"].isHidden(): 
+                            widgets["chk"].setChecked(data.get("checked", False))
+            except Exception:
                 pass
 
 
@@ -1162,6 +1234,12 @@ class MaterialProcessorGUI(QMainWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, "创建失败", f"处理过程中发生错误：{e}")
+
+    def resizeEvent(self, event):
+        """窗口缩放时移动 SizeGrip 到右下角"""
+        super().resizeEvent(event)
+        if hasattr(self, 'size_grip'):
+            self.size_grip.move(self.width() - 15, self.height() - 15)
 
 
 if __name__ == "__main__":
