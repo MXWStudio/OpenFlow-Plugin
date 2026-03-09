@@ -1017,12 +1017,19 @@ class MaterialProcessorGUI(QMainWindow):
     def load_data_from_json(self, json_path):
         """核心解析逻辑：读取 JSON 并自动填入项目名和勾选尺寸"""
         try:
-            # 预处理：剥离 // 注释（Chrome 插件可能产生非标准 JSON）
+            # 预处理：解决 Invalid control character 错误
             import re
             with open(json_path, 'r', encoding='utf-8') as f:
                 raw = f.read()
-            clean = re.sub(r'//[^\n]*', '', raw)
-            data = json.loads(clean)
+            
+            # 1. 移除 UTF-8 BOM (\ufeff)
+            clean = raw.lstrip('\ufeff')
+            # 2. 移除 // 单行注释，但要保护 URL（如 https://）
+            # 使用 (?<![:/]) 确保 // 前面既不是冒号也不是斜杠
+            clean = re.sub(r'(?<![:/])//.*', '', clean)
+            
+            # 使用 strict=False 允许解析包含物理控制字符的字符串
+            data = json.loads(clean, strict=False)
 
             # 兼容批量模板 (JSON外层是个列表)
             # 确保 full_json_data 在 __init__ 中初始化为 []
@@ -1075,7 +1082,7 @@ class MaterialProcessorGUI(QMainWindow):
             if not isinstance(data, dict):
                 raise ValueError("JSON 格式不正确，期望是一个项目对象")
 
-            # 1. 自动填入项目名称
+            # 1. 自动填入项目名称 (优先使用外层的简洁项目名)
             project_name = data.get("项目名称", "")
             if project_name:
                 self.edit_project_name.setText(project_name)
