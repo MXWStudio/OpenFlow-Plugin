@@ -200,6 +200,42 @@ class MaterialProcessorGUI(QMainWindow):
         content_layout.addWidget(init_group)
 
         # ==========================================
+        # 1.5 仪表盘：反馈与结果展示 (移动到此处)
+        # ==========================================
+        dash_frame = QFrame()
+        dash_frame.setStyleSheet("""
+            QFrame {
+                background-color: #2C2C2E;
+                border: 1px solid #38383A;
+                border-radius: 10px;
+            }
+        """)
+        dash_layout = QVBoxLayout(dash_frame)
+        dash_layout.setContentsMargins(10, 15, 10, 15)
+        dash_layout.setAlignment(Qt.AlignCenter)
+        
+        self.lbl_dashboard = QLabel("👋 欢迎！首先请点击上方按钮导入需求或初始化文件夹。")
+        self.lbl_dashboard.setAlignment(Qt.AlignCenter)
+        self.lbl_dashboard.setWordWrap(True)
+        self.lbl_dashboard.setStyleSheet("color: #FFFFFF;")
+        self.lbl_dashboard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        font_dash = QFont("Microsoft YaHei", 18, QFont.Bold)
+        self.lbl_dashboard.setFont(font_dash)
+        
+        self.lbl_stats_detail = QLabel("")
+        self.lbl_stats_detail.setAlignment(Qt.AlignCenter)
+        self.lbl_stats_detail.setWordWrap(True)
+        self.lbl_stats_detail.setStyleSheet("color: #FFFFFF;")
+        self.lbl_stats_detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        font_detail = QFont("Microsoft YaHei", 10)
+        self.lbl_stats_detail.setFont(font_detail)
+        
+        dash_layout.addWidget(self.lbl_dashboard)
+        dash_layout.addWidget(self.lbl_stats_detail)
+        
+        content_layout.addWidget(dash_frame)
+
+        # ==========================================
         # 2. 中部：文件夹拖拽区与尺寸配置
         # ==========================================
         top_layout = QHBoxLayout()
@@ -286,45 +322,6 @@ class MaterialProcessorGUI(QMainWindow):
         top_layout.addLayout(right_panel, stretch=1)
         
         content_layout.addLayout(top_layout)
-
-        # ==========================================
-        # 2. 中控仪表盘：极简结果展示区
-        # ==========================================
-        dash_frame = QFrame()
-        # 改成 Apple 风格的通知横幅 (去掉了刺眼的蓝框，换成高级灰底色)
-        dash_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2C2C2E;
-                border: 1px solid #38383A;
-                border-radius: 10px;
-            }
-        """)
-        dash_layout = QVBoxLayout(dash_frame)
-        dash_layout.setContentsMargins(10, 15, 10, 15) # 增加一点内部的上下留白，让它看起来更像一个卡片
-        dash_layout.setAlignment(Qt.AlignCenter)
-        
-        # 【Fix 3】移除易导致拉伸变形的 padding 等内联样式，统一在后面通过 setFont 等方式安全修改；启用 WordWrap 和中心对齐。
-        self.lbl_dashboard = QLabel("👋 欢迎！请添加文件夹。")
-        self.lbl_dashboard.setAlignment(Qt.AlignCenter)
-        self.lbl_dashboard.setWordWrap(True)
-        self.lbl_dashboard.setStyleSheet("color: #FFFFFF;")
-        # 固定最小高度或者提供合适的 SizePolicy 可以防止在内容切换时布局猛烈跳动导致拉伸
-        self.lbl_dashboard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        font_dash = QFont("Microsoft YaHei", 18, QFont.Bold)
-        self.lbl_dashboard.setFont(font_dash)
-        
-        self.lbl_stats_detail = QLabel("")
-        self.lbl_stats_detail.setAlignment(Qt.AlignCenter)
-        self.lbl_stats_detail.setWordWrap(True)
-        self.lbl_stats_detail.setStyleSheet("color: #FFFFFF;")
-        self.lbl_stats_detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        font_detail = QFont("Microsoft YaHei", 10)
-        self.lbl_stats_detail.setFont(font_detail)
-        
-        dash_layout.addWidget(self.lbl_dashboard)
-        dash_layout.addWidget(self.lbl_stats_detail)
-        
-        content_layout.addWidget(dash_frame)
 
         # ==========================================
         # 3. 隐藏的树状明细日志区
