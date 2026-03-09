@@ -13,6 +13,22 @@ from PySide6.QtGui import QColor, QFont, QIcon
 from pypinyin import lazy_pinyin, Style
 from main import MaterialProcessor
 
+# ==================== 工具函数 (便于单元测试) ====================
+def preprocess_json_text(raw_text):
+    """
+    对原始 JSON 文本进行清洗：
+    1. 移除 BOM
+    2. 移除 // 注释 (保护 URL)
+    3. 允许在后续通过 json.loads(..., strict=False) 处理控制字符
+    """
+    import re
+    # 1. 移除 UTF-8 BOM
+    clean = raw_text.lstrip('\ufeff')
+    # 2. 移除 // 单行注释，但要保护 URL（如 https://）
+    # 使用 (?<![:/]) 确保 // 前面既不是冒号也不是斜杠
+    clean = re.sub(r'(?<![:/])//.*', '', clean)
+    return clean
+
 class DragDropListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1007,6 +1023,7 @@ class MaterialProcessorGUI(QMainWindow):
         else:
             super().mouseReleaseEvent(event)
 
+
     # ==================== JSON 导入解析逻辑 ====================
     def select_json_file(self):
         """手动点击按鈕选择 JSON 文件"""
@@ -1017,17 +1034,11 @@ class MaterialProcessorGUI(QMainWindow):
     def load_data_from_json(self, json_path):
         """核心解析逻辑：读取 JSON 并自动填入项目名和勾选尺寸"""
         try:
-            # 预处理：解决 Invalid control character 错误
-            import re
             with open(json_path, 'r', encoding='utf-8') as f:
                 raw = f.read()
             
-            # 1. 移除 UTF-8 BOM (\ufeff)
-            clean = raw.lstrip('\ufeff')
-            # 2. 移除 // 单行注释，但要保护 URL（如 https://）
-            # 使用 (?<![:/]) 确保 // 前面既不是冒号也不是斜杠
-            clean = re.sub(r'(?<![:/])//.*', '', clean)
-            
+            # 使用工具函数预处理
+            clean = preprocess_json_text(raw)
             # 使用 strict=False 允许解析包含物理控制字符的字符串
             data = json.loads(clean, strict=False)
 
