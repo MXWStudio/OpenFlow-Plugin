@@ -78,7 +78,7 @@ class MaterialProcessorGUI(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("素材处理极简工作台 - v3.0")
-        self.resize(1100, 1200)
+        self.resize(1100, 800)
         
         # === 1. 设置窗口可缩放并保持自定义风格 ===
         # 为了支持全局缩放，我们移除完全无边框限制，或者保留但允许拉伸
@@ -170,8 +170,17 @@ class MaterialProcessorGUI(QMainWindow):
         # 这里简单起见，配合 layout 伸缩和 QSizeGrip
         main_layout.addWidget(title_bar)
         
-        # 内容区域
-        content_layout = QVBoxLayout()
+        # 内容区域（用 QScrollArea 包裹，让小屏幕用户能滚动看到底部按钮）
+        from PySide6.QtWidgets import QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("background: transparent;")
+
+        content_widget = QWidget()
+        content_widget.setObjectName("ScrollContent")
+        content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(15, 10, 15, 10)
         content_layout.setSpacing(12)
 
@@ -453,7 +462,8 @@ class MaterialProcessorGUI(QMainWindow):
         bottom_layout.addWidget(self.btn_rename)
         content_layout.addLayout(bottom_layout)
 
-        main_layout.addLayout(content_layout)
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
 
         self.apply_apple_dark_theme() # 应用苹果深色主题
 
