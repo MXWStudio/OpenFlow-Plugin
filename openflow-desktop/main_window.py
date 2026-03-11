@@ -83,18 +83,28 @@ class MaterialProcessorGUI(QMainWindow):
         
         self.preset_sizes = ["1280*720", "720*1280", "1920*1080", "1080*1920", "640*360", "1080*607", "1080*170", "900*900", "1080*1620", "160*160"]
         self.size_widgets = {}
-        self.latest_report = [] 
+        self.latest_report = []
+        self.valid_folders = []  # 校验通过的文件夹列表
+        
+        # 不需要尺寸校验的二级文件夹名（精确匹配）
+        self.skip_validation_folders = {"奇觅生成", "截屏素材", "录屏素材", "模糊处理"}
         
         # 配置文件保存
         self.settings = QSettings("MyCompany", "MaterialProcessor")
-        self.full_json_data = [] # 新增：保存完整的 JSON 导入数据
+        self.full_json_data = []  # 保存完整的 JSON 导入数据
+        self.json_path = ""      # 记住 JSON 文件路径，用于重新加载
         
         self.init_ui()
         self.load_settings()
 
+    def _should_skip_folder(self, folder_path):
+        """判断该文件夹是否属于免校验白名单，用 strip() 避免空格差异"""
+        name = os.path.basename(folder_path).strip()
+        return name in self.skip_validation_folders
+
     def init_ui(self):
         self.setWindowTitle("素材处理极简工作台 - v3.0")
-        self.resize(1100, 1200)
+        self.resize(1100, 800)
         
         # === 1. 设置窗口可缩放并保持自定义风格 ===
         # 为了支持全局缩放，我们移除完全无边框限制，或者保留但允许拉伸
@@ -186,8 +196,17 @@ class MaterialProcessorGUI(QMainWindow):
         # 这里简单起见，配合 layout 伸缩和 QSizeGrip
         main_layout.addWidget(title_bar)
         
-        # 内容区域
-        content_layout = QVBoxLayout()
+        # 内容区域（用 QScrollArea 包裹，让小屏幕用户能滚动看到底部按钮）
+        from PySide6.QtWidgets import QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("background: transparent;")
+
+        content_widget = QWidget()
+        content_widget.setObjectName("ScrollContent")
+        content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(15, 10, 15, 10)
         content_layout.setSpacing(12)
 
@@ -469,7 +488,8 @@ class MaterialProcessorGUI(QMainWindow):
         bottom_layout.addWidget(self.btn_rename)
         content_layout.addLayout(bottom_layout)
 
-        main_layout.addLayout(content_layout)
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
 
         self.apply_apple_dark_theme() # 应用苹果深色主题
 
@@ -573,6 +593,10 @@ class MaterialProcessorGUI(QMainWindow):
             self.settings.setValue("project_name", self.edit_project_name.text())
         except Exception:
             pass
+        
+        # 保存 JSON 路径，下次启动自动恢复
+        if self.json_path:
+            self.settings.setValue("json_path", self.json_path)
             
         specs_data = {}
         # 在循环外导入
@@ -611,6 +635,11 @@ class MaterialProcessorGUI(QMainWindow):
                             widgets["chk"].setChecked(data.get("checked", False))
             except Exception:
                 pass
+        
+        # 恢复上次的 JSON 路径，并自动重新加载（不弹选择框）
+        saved_json = self.settings.value("json_path", "")
+        if saved_json and os.path.isfile(saved_json):
+            self.load_data_from_json(saved_json)
 
 
     # ==================== 拖拽与文件选择 ====================
@@ -629,10 +658,11 @@ class MaterialProcessorGUI(QMainWindow):
             self.add_folders_from_drop(folders)
             event.acceptProposedAction()
 
-    # 【优化需求 2：智能识别项目根目录，并自动填写项目名】
+    # 【优化需求 2：智能识别项目根目录，并自动填写项目名；支持 JSON 自动匹配项目游戏】
     def add_folders_from_drop(self, folders):
         added = 0
         real_folders_to_add = []
+        detected_root_name = ""
 
         # 1. 遍历用户拖入的路径
         for f in folders:
@@ -647,10 +677,8 @@ class MaterialProcessorGUI(QMainWindow):
 
             # 3. 关键逻辑：如果含有子目录，说明这是项目总文件夹
             if subdirs:
-                # 提取父文件夹名称自动填入项目名称输入框 (例如: "小火车呜呜呜")
-                root_name = os.path.basename(f)
-                self.edit_project_name.setText(root_name)
-                
+                # 提取父文件夹名称（如 "20260310_MXW_暴走英雄之路"）
+                detected_root_name = os.path.basename(f)
                 # 4. 将里面的子文件夹追加到待处理列表
                 real_folders_to_add.extend(subdirs)
             else:
@@ -665,9 +693,15 @@ class MaterialProcessorGUI(QMainWindow):
                 added += 1
                 
         if added > 0:
+            # 尝试从 JSON 自动匹配项目游戏（优先于手动提取文件夹名）
+            matched = self._auto_match_project_from_json(detected_root_name)
+            if not matched:
+                # 没有 JSON 或未匹配到时，回退到原来的文件夹名策略
+                if detected_root_name:
+                    self.edit_project_name.setText(detected_root_name)
+                self.auto_check_sizes_from_folders(real_folders_to_add)
             self.update_dashboard_ui_state(False)
             self.preload_files()
-            self.auto_check_sizes_from_folders(real_folders_to_add) # 智能识别文件夹名并自动勾选对应尺寸
 
     def auto_check_sizes_from_folders(self, new_folders):
         """智能识别文件夹名称并自动勾选对应尺寸"""
@@ -684,6 +718,68 @@ class MaterialProcessorGUI(QMainWindow):
                 # 如果界面上的尺寸（如 "1280*720"）被包含在处理后的文件夹名中
                 if size_str in normalized_name:
                     widgets["chk"].setChecked(True) # 自动打勾！
+
+    def _auto_match_project_from_json(self, folder_name):
+        """根据文件夹名从已加载的 JSON 数据中自动匹配项目游戏配置。
+        返回 True 表示匹配成功并已填充配置，False 表示未匹配。"""
+        if not self.full_json_data or not folder_name:
+            return False
+        
+        folder_name_lower = folder_name.lower()
+        best_match = None
+        best_score = 0
+        
+        for item in self.full_json_data:
+            proj = item.get("项目名称", "")
+            if not proj:
+                continue
+            proj_lower = proj.lower()
+            # 文件夹名包含项目名，或项目名包含文件夹名关键词
+            if proj_lower in folder_name_lower:
+                score = len(proj_lower)
+                if score > best_score:
+                    best_score = score
+                    best_match = item
+        
+        if best_match is None:
+            return False
+        
+        # 匹配成功，自动填充配置
+        project_name = best_match.get("项目名称", "")
+        maker_name = best_match.get("制作人", "")
+        
+        if project_name:
+            self.edit_project_name.setText(project_name)
+        if maker_name:
+            from pypinyin import lazy_pinyin, Style
+            initials = "".join(lazy_pinyin(maker_name, style=Style.FIRST_LETTER)).upper()
+            self.edit_maker_abbr.setText(initials)
+        
+        # 清空并重新勾选尺寸
+        for widgets in self.size_widgets.values():
+            widgets["chk"].setChecked(False)
+            widgets["qty"] = 0
+        
+        details = best_match.get("尺寸要求明细", [])
+        matched_count = 0
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            res = detail.get("分辨率")
+            if not res:
+                continue
+            norm_res = res.lower().replace('x', '*').replace('-', '*').strip()
+            qty = int(detail.get("所需数量", 0) or 0)
+            if norm_res in self.size_widgets:
+                self.size_widgets[norm_res]["chk"].setChecked(True)
+                self.size_widgets[norm_res]["qty"] = qty
+                matched_count += 1
+        
+        maker_abbr = self.edit_maker_abbr.text()
+        self.lbl_dashboard.setText(f"🎯 自动识别项目：{project_name} | 制作人：{maker_name}（{maker_abbr}）")
+        self.lbl_dashboard.setStyleSheet("color: #32D74B;")
+        self.lbl_stats_detail.setText(f"已从 JSON 自动匹配，勾选 {matched_count} 项尺寸需求。")
+        return True
 
     def select_multiple_folders(self):
         # PyQt原生不原生支持多选目录，妥协用法：使用 QFileDialog.getOpenFileNames 拿路径然后提取目录
@@ -791,6 +887,11 @@ class MaterialProcessorGUI(QMainWindow):
         
         for folder in self.current_folders:
             folder_name_short = os.path.basename(folder)
+            
+            # 跳过不需要校验的特殊文件夹
+            if self._should_skip_folder(folder):
+                continue
+            
             try:
                 files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
             except Exception:
@@ -844,10 +945,13 @@ class MaterialProcessorGUI(QMainWindow):
             return
 
         self.latest_report = []
+        self.valid_folders = []   # 重置：本次校验通过的文件夹
         global_actual_size_counts = {}
         
-        error_count = 0
         total_files = 0
+        # 按文件夹维度统计错误
+        folder_error_counts = {}  # folder_path -> error_count
+        folder_file_counts = {}   # folder_path -> total_file_count
         
         grouped_data = {
             "视频 (Video)": {"横版": [], "竖版": []},
@@ -856,22 +960,29 @@ class MaterialProcessorGUI(QMainWindow):
         
         for folder in self.current_folders:
             folder_name_short = os.path.basename(folder)
+            
+            # 跳过不需要校验的特殊文件夹（不加入 valid_folders，避免重命名时路径污染）
+            if self._should_skip_folder(folder):
+                continue
+            
             report = self.processor.validate_folder(folder, required_specs)
+            folder_error_counts[folder] = 0
+            folder_file_counts[folder] = 0
             
             for info in report:
                 if info['file'] == "[整体统计]":
                     continue
                     
                 total_files += 1
+                folder_file_counts[folder] += 1
                 info['folder'] = folder_name_short
                 self.latest_report.append(info)
                 
                 if info['status'] == "校验通过":
-                    # 【Fix 4】实际尺寸也需要规范化才能精准统计
                     norm_actual = info['actual_size'].lower().replace('x', '*').strip()
                     global_actual_size_counts[norm_actual] = global_actual_size_counts.get(norm_actual, 0) + 1
                 else:
-                    error_count += 1
+                    folder_error_counts[folder] += 1
                     
                 # 分组归类
                 ext = os.path.splitext(info['file'])[1].lower()
@@ -884,25 +995,37 @@ class MaterialProcessorGUI(QMainWindow):
                         orientation = "未知尺寸"
                         if "未知尺寸" not in grouped_data["视频 (Video)"]:
                             grouped_data["视频 (Video)"]["未知尺寸"] = []
-                            
                     grouped_data["视频 (Video)"][orientation].append(info)
                 else:
                     if size_str not in grouped_data["图片 (Image)"]:
                         grouped_data["图片 (Image)"][size_str] = []
                     grouped_data["图片 (Image)"][size_str].append(info)
 
-        # 检查总数量是否达标
+        # 统计通过/失败的文件夹
+        error_folders = []
+        for folder, err_cnt in folder_error_counts.items():
+            if err_cnt == 0 and folder_file_counts.get(folder, 0) > 0:
+                self.valid_folders.append(folder)
+            elif err_cnt > 0:
+                error_folders.append((folder, err_cnt))
+        
+        total_error_count = sum(ec for _, ec in error_folders)
+
+        # 检查总数量是否达标（只统计通过校验的文件）
         qty_errors = []
         for req_size, req_count in required_specs.items():
             actual_count = global_actual_size_counts.get(req_size, 0)
             if actual_count < req_count:
-                error_count += 1
                 qty_errors.append(f"{req_size} (缺 {req_count - actual_count} 个)")
         
         self.render_tree(grouped_data)
 
         # --- 刷新极简仪表盘 (Dashboard) ---
-        if error_count == 0 and total_files > 0:
+        has_errors = bool(error_folders) or bool(qty_errors)
+        has_valid = bool(self.valid_folders)
+        
+        if not has_errors and total_files > 0:
+            # 全部通过
             self.lbl_dashboard.setText(f"✅ 完美通过：共成功读取并匹配 {total_files} 个文件")
             self.lbl_dashboard.setStyleSheet("color: #28A745;")
             self.lbl_stats_detail.setText("所有文件格式正确且数量达标，随时可执行一键重命名。")
@@ -910,8 +1033,24 @@ class MaterialProcessorGUI(QMainWindow):
             self.btn_export_log.setVisible(False)
             self.tree.setVisible(False)
             self.btn_toggle_log.setText("🔽 展开明细日志")
+        elif has_errors and has_valid:
+            # 部分通过：有错误文件夹，但也有通过的文件夹
+            valid_names = [os.path.basename(f) for f in self.valid_folders]
+            err_names = [os.path.basename(f) for f, _ in error_folders]
+            self.lbl_dashboard.setText(f"⚠️ 部分通过：{len(self.valid_folders)} 个文件夹可命名，{len(error_folders)} 个有错误")
+            self.lbl_dashboard.setStyleSheet("color: #FF9F0A;")
+            detail_parts = [f"✅ 可命名：{', '.join(valid_names)}"]
+            detail_parts.append(f"❌ 有错误：{', '.join(err_names)}（共 {total_error_count} 处）")
+            if qty_errors:
+                detail_parts.append("数量不足：" + ", ".join(qty_errors))
+            self.lbl_stats_detail.setText(" | ".join(detail_parts))
+            self.btn_rename.setEnabled(True)  # 允许对通过的文件夹重命名
+            self.btn_export_log.setVisible(True)
+            self.tree.setVisible(True)
+            self.btn_toggle_log.setText("🔼 收起明细日志")
         else:
-            self.lbl_dashboard.setText(f"❌ 校验失败：发现 {error_count} 处异常")
+            # 全部失败
+            self.lbl_dashboard.setText(f"❌ 校验失败：发现 {total_error_count} 处异常")
             self.lbl_dashboard.setStyleSheet("color: #DC3545;")
             
             err_detail = []
@@ -970,14 +1109,36 @@ class MaterialProcessorGUI(QMainWindow):
             self.edit_project_name.setFocus()
             return
         
+        # ---构建重命名列表---
+        # 1. 优先重命名校验通过的文件夹（valid_folders 里不包含跳过校验的特殊文件夹）
+        validated_folders = [f for f in self.valid_folders if os.path.isdir(f)]
+        # 2. 跳过校验的特殊文件夹单独处理（不影响主流重命名）
+        skip_folders_in_list = [f for f in self.current_folders 
+                                if self._should_skip_folder(f) and os.path.isdir(f)]
+        
+        # 如果没有任何已校验的文件夹，就对所有当前文件夹操作（兑底）
+        if not validated_folders and not skip_folders_in_list:
+            validated_folders = [f for f in self.current_folders if os.path.isdir(f)]
+
+        # ---执行重命名---
         all_success = True
         failed_folders = []
         
-        for folder in self.current_folders:
+        # 对校验通过的文件夹重命名（失败则标记为错误）
+        for folder in validated_folders:
             success = self.processor.rename_files(folder, project_name, maker_abbr)
             if not success:
                 all_success = False
                 failed_folders.append(os.path.basename(folder))
+        
+        # 对跳过校验的文件夹重命名（失败不报错，只记录日志）
+        skip_warn = []
+        for folder in skip_folders_in_list:
+            if folder not in validated_folders:  # 避免重复
+                try:
+                    self.processor.rename_files(folder, project_name, maker_abbr)
+                except Exception as e:
+                    skip_warn.append(os.path.basename(folder))
         
         if all_success:
             self.lbl_dashboard.setText("🚀 重命名大成功！")
@@ -1026,8 +1187,10 @@ class MaterialProcessorGUI(QMainWindow):
 
     # ==================== JSON 导入解析逻辑 ====================
     def select_json_file(self):
-        """手动点击按鈕选择 JSON 文件"""
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择需求 JSON 文件", "", "JSON Files (*.json)")
+        """手动点击按钮选择 JSON 文件（只需导入一次，路径会被记住）"""
+        # 优先用上次的目录
+        start_dir = os.path.dirname(self.json_path) if self.json_path else ""
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择需求 JSON 文件", start_dir, "JSON Files (*.json)")
         if file_path:
             self.load_data_from_json(file_path)
 
@@ -1128,11 +1291,15 @@ class MaterialProcessorGUI(QMainWindow):
                     self.size_widgets[norm_res]["qty"] = qty  # 存入数量
                     matched_count += 1
 
-            # 5. 给出反馈提示
+            # 5. 保存 JSON 路径 & 给出反馈提示
+            self.json_path = json_path
             maker_abbr = self.edit_maker_abbr.text()
+            total_projects = len(self.full_json_data) if isinstance(self.full_json_data, list) and self.full_json_data else 1
             self.lbl_dashboard.setText(f"📄 已加载配置：{project_name} | 制作人：{maker_name} ({maker_abbr})")
             self.lbl_dashboard.setStyleSheet("color: #32D74B;")
-            self.lbl_stats_detail.setText(f"已自动勾选 {matched_count} 项尺寸需求，将按数量校验。")
+            self.lbl_stats_detail.setText(f"JSON 已记录 {total_projects} 个项目游戏，拖入文件夹后将自动识别匹配。已勾选 {matched_count} 项尺寸需求。")
+            # 同步更新导入按钮文字，提示 JSON 已就绪
+            self.btn_import_json.setText(f"📄 JSON 已就绪（{total_projects}个项目）")
 
         except Exception as e:
             QMessageBox.warning(self, "读取 JSON 失败", f"无法解析该文件，请检查格式。\n{e}")
