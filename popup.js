@@ -155,7 +155,8 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
         
         // 核心值
-        const companyName = task["公司名称"] || task["公司主体"] || "赛诺斯"; 
+        // 公司名称和集团：直接使用网页动态提取的“集团名称”字段，保证与系统完全一致
+        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
         const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
         const materialTypeRaw = task.materialType || task["素材类型"] || "";
         const isGraphic = materialTypeRaw.includes("平面");
@@ -288,7 +289,9 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
             const today = new Date();
             const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
             const gameName = splitProjectName(task.projectName || task["项目名称"]);
-            const companyName = task["公司名称"] || task["公司主体"] || "赛诺斯"; 
+            
+            // 公司名称和集团：直接使用网页动态提取的“集团名称”字段
+            const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
             const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
 
             let rawMaterialCount = 4;
@@ -325,7 +328,10 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
 
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
-        const fileName = isGraphic ? `平面需求导出_${new Date().getTime()}.csv` : `视频需求导出_${new Date().getTime()}.csv`;
+        const d = new Date();
+        const yyyymmdd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+        const csvMakerName = extractedBulkData.length > 0 ? (extractedBulkData[0]["制作人"] || extractedBulkData[0]["制作者"] || "制作人") : "制作人";
+        const fileName = `${yyyymmdd}-${csvMakerName}-报表.csv`;
         
         chrome.downloads.download({ url: url, filename: fileName });
         
