@@ -81,7 +81,7 @@ class MaterialProcessorGUI(QMainWindow):
         self.processor = MaterialProcessor()
         self.current_folders = []
         
-        self.preset_sizes = ["1280*720", "720*1280", "1920*1080", "1080*1920", "640*360", "1080*607", "1080*170", "900*900", "1080*1620", "160*160"]
+        self.preset_sizes = ["1280*720", "720*1280", "1920*1080", "1080*1920", "640*360", "1080*607", "1080*170", "900*900", "1080*1620", "160*160", "512*512"]
         self.size_widgets = {}
         self.latest_report = []
         self.valid_folders = []  # 校验通过的文件夹列表
