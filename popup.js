@@ -209,9 +209,9 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         }
 
         // 收集附加属性（包含项目全名）
-        const extraAttributesMap = { "项目名称": fullName };
+        const extraAttributesMap = { "项目全称": fullName };
         const skipKeys = new Set([
-            "日期", "制作人", "项目游戏名称", "项目名称", "projectName",
+            "日期", "制作人", "项目游戏名称", "项目名称", "项目全称", "projectName",
             "公司名称", "公司主体", "集团", "集团名称", "设计小组", "需求归属",
             "需求属性", "渠道", "投放媒体", "素材类型", "materialType", "工具标签",
             "视频总产出", "原创视频", "所需套数", "素材数", "原创", "尺寸延展",
