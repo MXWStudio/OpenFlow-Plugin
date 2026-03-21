@@ -1,16 +1,6 @@
 // popup.js
 let extractedBulkData = [];
 
-// 初始化：检查本地存储是否有上次提取的数据
-document.addEventListener('DOMContentLoaded', () => {
-    chrome.storage.local.get(['lastExtractedBulkData'], function(result) {
-        if (result.lastExtractedBulkData && result.lastExtractedBulkData.length > 0) {
-            extractedBulkData = result.lastExtractedBulkData;
-            renderPreview(extractedBulkData);
-        }
-    });
-});
-
 document.getElementById('extractBtn').addEventListener('click', async () => {
     const btn = document.getElementById('extractBtn');
     
@@ -47,10 +37,6 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
                     if (extractedBulkData.length === 0) {
                         alert("未找到任何状态为“未开始”的任务！");
                     } else {
-                        // 将数据保存到本地存储
-                        chrome.storage.local.set({ 'lastExtractedBulkData': extractedBulkData }, function() {
-                            console.log('数据已保存到本地存储。');
-                        });
                         renderPreview(extractedBulkData);
                     }
                 } else {
@@ -72,34 +58,8 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 function renderPreview(dataList) {
     document.getElementById('previewArea').style.display = 'block';
     
-    // 统计平面、视频和未知任务的数量
-    let graphicCount = 0;
-    let videoCount = 0;
-    let unknownCount = 0;
-
-    dataList.forEach(task => {
-        const materialTypeRaw = task.materialType || task["素材类型"] || "";
-        if (materialTypeRaw.includes("平面")) {
-            graphicCount++;
-        } else if (materialTypeRaw.includes("视频")) {
-            videoCount++;
-        } else {
-            unknownCount++;
-        }
-    });
-
-    let statusMsg = `提取完成！共计 ${dataList.length} 个任务。`;
-    let typeMsgParts = [];
-    if (graphicCount > 0) typeMsgParts.push(`平面：${graphicCount}`);
-    if (videoCount > 0) typeMsgParts.push(`视频：${videoCount}`);
-    if (unknownCount > 0) typeMsgParts.push(`未知任务：${unknownCount}`);
-
-    if (typeMsgParts.length > 0) {
-        statusMsg += ` (${typeMsgParts.join('  ')})`;
-    }
-
-    // 显示成功提取的任务数量及类型统计
-    document.getElementById('statusText').innerText = statusMsg;
+    // 显示成功提取的任务数量
+    document.getElementById('statusText').innerText = `提取完成！共计 ${dataList.length} 个任务。`;
     
     const ul = document.getElementById('taskList');
     ul.innerHTML = '';
