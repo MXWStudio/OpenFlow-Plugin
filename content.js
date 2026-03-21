@@ -385,7 +385,10 @@ async function extractBulkDataFromPageAsync(sendResponse) {
     }
 
     console.log('[SmartAd 助手] 批量提取完成！', extractedDataList);
-    // 所有循环结束后，返回最终数据
+    // 所有循环结束后，将数据保存到本地存储并返回
+    chrome.storage.local.set({ 'lastExtractedBulkData': extractedDataList }, () => {
+        console.log('[SmartAd 助手] 数据已保存到本地存储');
+    });
     sendResponse({ success: true, data: extractedDataList });
 
   } catch (error) {

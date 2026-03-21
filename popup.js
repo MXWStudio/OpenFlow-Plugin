@@ -78,7 +78,7 @@ function renderPreview(dataList) {
     let unknownCount = 0;
 
     dataList.forEach(task => {
-        const materialTypeRaw = task.materialType || task["素材类型"] || "";
+        const materialTypeRaw = String(task.materialType || task["素材类型"] || "");
         if (materialTypeRaw.includes("平面")) {
             graphicCount++;
         } else if (materialTypeRaw.includes("视频")) {
