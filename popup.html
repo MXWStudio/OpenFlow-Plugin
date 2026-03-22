@@ -5,154 +5,232 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartAd 素材需求提取助手</title>
     <style>
-        body {
-            width: 300px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        * {
+            box-sizing: border-box;
             margin: 0;
-            padding: 16px;
-            color: #333;
-            background-color: #f9f9f9;
+            padding: 0;
         }
 
-        h2 {
-            font-size: 16px;
-            margin-top: 0;
-            margin-bottom: 16px;
-            text-align: center;
-            color: #2c3e50;
-            border-bottom: 1px solid #ebebeb;
-            padding-bottom: 8px;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            font-size: 14px;
-            font-weight: bold;
-            color: white;
-            background-color: #1890ff;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s, transform 0.1s;
-        }
-
-        button:hover {
-            background-color: #40a9ff;
-        }
-
-        button:active {
-            transform: scale(0.98);
-        }
-
-        button:disabled {
-            background-color: #faad14; /* 抓取时的警告黄 */
-            cursor: not-allowed;
-            color: #fff;
-        }
-
-        /* 预览区域样式 */
-        #previewArea {
-            margin-top: 16px;
-            display: none; /* 默认隐藏 */
-            background-color: white;
+        body {
+            background-color: #F5F5F7;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+            display: flex;
+            justify-content: center;
             padding: 12px;
-            border-radius: 6px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        #statusText {
-            font-size: 13px;
-            color: #52c41a;
-            margin-bottom: 8px;
+        .popup-container {
+            width: 340px;
+            background: #FFFFFF;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            color: #1F1F1F;
+            font-weight: 600;
+        }
+
+        .btn {
+            border: none;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.75;
+        }
+
+        .btn-primary {
+            background: #1677FF;
+            color: #FFFFFF;
+            width: 100%;
+            box-shadow: 0 2px 0 rgba(5, 145, 255, 0.1);
+        }
+
+        .btn-primary:hover {
+            background: #4096FF;
+        }
+
+        .btn-secondary {
+            background: #FFFFFF;
+            color: #1F1F1F;
+            border: 1px solid #D9D9D9;
+            width: 100%;
+        }
+
+        .btn-secondary:hover {
+            background: #FAFAFA;
+            border-color: #1677FF;
+            color: #1677FF;
+        }
+
+        .status-area {
+            display: none;
+            gap: 8px;
+            flex-wrap: wrap;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
             font-weight: 500;
         }
 
-        /* 简要列表样式 */
-        #taskList {
-            list-style: none;
-            padding: 0;
-            margin: 0 0 12px 0;
-            max-height: 120px;
-            overflow-y: auto;
-            border-top: 1px solid #f0f0f0;
+        .badge-success {
+            background: #F6FFED;
+            color: #389E0D;
+            border: 1px solid #B7EB8F;
         }
 
-        #taskList li {
-            font-size: 12px;
-            padding: 6px 4px;
-            border-bottom: 1px solid #f0f0f0;
+        .badge-blue {
+            background: #E6F4FF;
+            color: #1677FF;
+            border: 1px solid #91CAFF;
+        }
+
+        .badge-purple {
+            background: #F9F0FF;
+            color: #531DAB;
+            border: 1px solid #D3ADF7;
+        }
+
+        .list-wrapper {
+            background: #FAFAFA;
+            border: 1px solid #F0F0F0;
+            border-radius: 8px;
+            padding: 4px;
+            display: none;
+        }
+
+        .task-list {
+            list-style: none;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .task-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .task-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .task-list::-webkit-scrollbar-thumb {
+            background: #D9D9D9;
+            border-radius: 4px;
+        }
+
+        .task-item {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
         }
 
-        #taskList li:last-child {
-            border-bottom: none;
+        .task-item:hover {
+            background: #F0F0F0;
         }
-        
-        #taskList li span.name {
+
+        .task-name {
+            font-size: 13px;
+            color: #262626;
+            font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 160px;
-            display: inline-block;
-        }
-        
-        #taskList li span.count {
-            color: #888;
+            max-width: 200px;
         }
 
-        /* 导出按钮容器 */
+        .task-meta {
+            font-size: 12px;
+            color: #8C8C8C;
+            white-space: nowrap;
+        }
+
         .export-actions {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
+            display: none;
             gap: 10px;
         }
 
-        .export-actions button {
-            width: 100%;
-            padding: 8px 0;
-            font-size: 13px;
+        .btn-excel {
+            flex: 1;
+            background: #F6FFED;
+            color: #389E0D;
+            border: 1px solid #B7EB8F;
         }
 
-        .btn-export-excel {
-            background-color: #52c41a;
-        }
-        .btn-export-excel:hover {
-            background-color: #73d13d;
+        .btn-excel:hover {
+            background: #D9F7BE;
+            border-color: #95DE64;
         }
 
         .btn-json {
-            background-color: #722ed1;
-        }
-        .btn-json:hover {
-            background-color: #9254de;
+            flex: 1;
+            background: #F9F0FF;
+            color: #531DAB;
+            border: 1px solid #D3ADF7;
         }
 
+        .btn-json:hover {
+            background: #EFDBFF;
+            border-color: #B37FEB;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
-    <h2>批量提取需求工具</h2>
-    
-    <!-- 主操作按钮 -->
-    <button id="extractBtn">提取所有"未开始"任务</button>
+    <div class="popup-container">
+        <div class="header"><span>🚀</span><span>任务抓取工具</span></div>
+        <button id="extractBtn" class="btn btn-primary"><span>📥</span> 提取当前页面任务</button>
+        <div id="statusArea" class="status-area"></div>
+        <div id="listWrapper" class="list-wrapper">
+            <ul id="taskList" class="task-list"></ul>
+        </div>
+        <div id="exportActions" class="export-actions">
+            <button id="exportExcelBtn" class="btn btn-excel"><span>📊</span> 导出 Excel</button>
+            <button id="exportJsonBtn" class="btn btn-json"><span>📋</span> 导出 JSON</button>
+        </div>
+    </div>
 
-    <!-- 预览与导出区域 -->
-    <div id="previewArea">
-        <div id="statusText"></div>
-        <ul id="taskList"></ul>
-        <div class="export-actions">
-            <button id="exportExcelBtn" class="btn-export-excel">
-                导出 Excel
-            </button>
-            <button id="exportJsonBtn" class="btn-json">
-                导出 JSON
-            </button>
-        </div>
-        </div>
-    
-    <!-- Scripts -->
     <script src="xlsx.bundle.js"></script>
     <script src="popup.js"></script>
 </body>

@@ -28,6 +28,41 @@ function saveExtractedBulkData(dataList) {
     });
 }
 
+function escapeHtmlText(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function setExtractButtonPrimaryState() {
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = false;
+    btn.className = 'btn btn-primary';
+    btn.innerHTML = '<span>📥</span> 提取当前页面任务';
+}
+
+function setExtractButtonSecondaryState() {
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = false;
+    btn.className = 'btn btn-secondary';
+    btn.innerHTML = '<span>🔄</span> 重新提取任务';
+}
+
+function setExtractButtonLoadingState() {
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = true;
+    btn.className = 'btn btn-primary';
+    btn.innerHTML = '<span>⏳</span> 提取中...';
+}
+
+function hidePreviewSections() {
+    document.getElementById('statusArea').style.display = 'none';
+    document.getElementById('listWrapper').style.display = 'none';
+    document.getElementById('exportActions').style.display = 'none';
+}
+
 async function restoreExtractedBulkData() {
     try {
         const cachedData = await getStoredExtractedBulkData();
@@ -40,15 +75,13 @@ async function restoreExtractedBulkData() {
     }
 }
 
+setExtractButtonPrimaryState();
+hidePreviewSections();
 void restoreExtractedBulkData();
 
 document.getElementById('extractBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('extractBtn');
-    
     // 1. 按钮防抖与提示交互
-    btn.disabled = true;
-    btn.innerText = "正在自动点击抓取中，请勿操作网页...";
-    document.getElementById('previewArea').style.display = 'none';
+    setExtractButtonLoadingState();
 
     try {
         // 获取当前活动标签页
@@ -65,8 +98,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
         setTimeout(() => {
             chrome.tabs.sendMessage(tab.id, { action: "EXTRACT_BULK_DOM" }, async (response) => {
                 // 恢复按钮状态
-                btn.disabled = false;
-                btn.innerText = '提取所有"未开始"任务';
+                setExtractButtonPrimaryState();
 
                 if (chrome.runtime.lastError) {
                     alert("无法连接到页面脚本，请刷新页面后重试。\n错误信息: " + chrome.runtime.lastError.message);
@@ -83,6 +115,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
                         alert("保存提取数据失败：" + err.message);
                     }
                     if (extractedBulkData.length === 0) {
+                        hidePreviewSections();
                         alert("未找到任何状态为“未开始”的任务！");
                     } else {
                         renderPreview(extractedBulkData);
@@ -94,8 +127,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
         }, 150);
         
     } catch (err) {
-        btn.disabled = false;
-        btn.innerText = '提取所有"未开始"任务';
+        setExtractButtonPrimaryState();
         alert("执行脚本发生错误：" + err.message);
     }
 });
@@ -104,9 +136,6 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
  * 渲染预览界面
  */
 function renderPreview(dataList) {
-    document.getElementById('previewArea').style.display = 'block';
-    
-    // 显示成功提取的任务数量
     let graphicCount = 0;
     let videoCount = 0;
 
@@ -120,29 +149,34 @@ function renderPreview(dataList) {
         }
     });
 
-    document.getElementById('statusText').innerText = `提取完成！平面：${graphicCount} 个，视频：${videoCount} 个，共计 ${dataList.length} 个任务。`;
+    document.getElementById('statusArea').innerHTML =
+        '<span class="badge badge-success">✅ 共 ' + dataList.length + ' 个</span>' +
+        '<span class="badge badge-blue">平面: ' + graphicCount + '</span>' +
+        '<span class="badge badge-purple">视频: ' + videoCount + '</span>';
+    document.getElementById('statusArea').style.display = 'flex';
+    document.getElementById('listWrapper').style.display = 'block';
+    document.getElementById('exportActions').style.display = 'flex';
+    setExtractButtonSecondaryState();
 
     const ul = document.getElementById('taskList');
     ul.innerHTML = '';
     
-    // 简要展示每个任务的名称和尺寸数量
     dataList.forEach(task => {
-        let li = document.createElement('li');
-        
-        // 项目名称
-        let nameSpan = document.createElement('span');
-        nameSpan.className = 'name';
-        nameSpan.innerText = task.projectName || '未知项目';
-        nameSpan.title = task.projectName; // 鼠标悬浮显示完整名称
-        
-        // 尺寸数量
-        let countSpan = document.createElement('span');
-        countSpan.className = 'count';
+        const projectName = task.projectName || task["项目名称"] || '未知项目';
         const detailsCount = task.details ? task.details.length : 0;
-        countSpan.innerText = `${detailsCount} 个尺寸`;
+        const requiredSets = task.requiredSets || task["所需套数"] || task["素材数"] || '';
+        const metaParts = [`${detailsCount} 个尺寸`];
+        const safeProjectName = escapeHtmlText(projectName);
 
-        li.appendChild(nameSpan);
-        li.appendChild(countSpan);
+        if (requiredSets) {
+            metaParts.push(`数量 ${requiredSets}`);
+        }
+        
+        let li = document.createElement('li');
+        li.className = 'task-item';
+        li.innerHTML =
+            '<span class="task-name" title="' + safeProjectName + '">' + safeProjectName + '</span>' +
+            '<span class="task-meta">' + escapeHtmlText(metaParts.join(' · ')) + '</span>';
         ul.appendChild(li);
     });
 }
