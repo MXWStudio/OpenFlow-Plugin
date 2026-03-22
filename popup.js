@@ -1,5 +1,46 @@
 // popup.js
 let extractedBulkData = [];
+const EXTRACTED_BULK_DATA_STORAGE_KEY = 'extractedBulkData';
+
+function getStoredExtractedBulkData() {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(EXTRACTED_BULK_DATA_STORAGE_KEY, (result) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+
+            resolve(result[EXTRACTED_BULK_DATA_STORAGE_KEY]);
+        });
+    });
+}
+
+function saveExtractedBulkData(dataList) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.set({ [EXTRACTED_BULK_DATA_STORAGE_KEY]: dataList }, () => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+
+            resolve();
+        });
+    });
+}
+
+async function restoreExtractedBulkData() {
+    try {
+        const cachedData = await getStoredExtractedBulkData();
+        if (Array.isArray(cachedData) && cachedData.length > 0) {
+            extractedBulkData = cachedData;
+            renderPreview(extractedBulkData);
+        }
+    } catch (err) {
+        console.error('恢复提取缓存失败:', err);
+    }
+}
+
+void restoreExtractedBulkData();
 
 document.getElementById('extractBtn').addEventListener('click', async () => {
     const btn = document.getElementById('extractBtn');
@@ -22,7 +63,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
         // 2. 发送批量抓取指令
         // 给一点点延迟确保 content.js 加载完毕
         setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, { action: "EXTRACT_BULK_DOM" }, (response) => {
+            chrome.tabs.sendMessage(tab.id, { action: "EXTRACT_BULK_DOM" }, async (response) => {
                 // 恢复按钮状态
                 btn.disabled = false;
                 btn.innerText = '提取所有"未开始"任务';
@@ -33,7 +74,14 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
                 }
 
                 if (response && response.success) {
-                    extractedBulkData = response.data || [];
+                    extractedBulkData = Array.isArray(response.data) ? response.data : [];
+
+                    try {
+                        await saveExtractedBulkData(extractedBulkData);
+                    } catch (err) {
+                        console.error('保存提取缓存失败:', err);
+                        alert("保存提取数据失败：" + err.message);
+                    }
                     if (extractedBulkData.length === 0) {
                         alert("未找到任何状态为“未开始”的任务！");
                     } else {
@@ -59,8 +107,21 @@ function renderPreview(dataList) {
     document.getElementById('previewArea').style.display = 'block';
     
     // 显示成功提取的任务数量
-    document.getElementById('statusText').innerText = `提取完成！共计 ${dataList.length} 个任务。`;
-    
+    let graphicCount = 0;
+    let videoCount = 0;
+
+    dataList.forEach(task => {
+        const materialType = task.materialType || task["素材类型"] || "";
+        if (materialType.includes("平面")) {
+            graphicCount += 1;
+        }
+        if (materialType.includes("视频")) {
+            videoCount += 1;
+        }
+    });
+
+    document.getElementById('statusText').innerText = `提取完成！平面：${graphicCount} 个，视频：${videoCount} 个，共计 ${dataList.length} 个任务。`;
+
     const ul = document.getElementById('taskList');
     ul.innerHTML = '';
     
@@ -134,30 +195,47 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         return;
     }
     
-    // 助手函数：拆分项目名称，提取游戏名
-    const splitProjectName = (fullName) => {
+    // 助手函数：拆分项目名称，提取游戏名，灵活过滤冗余信息
+    const splitProjectName = (fullName, company, channel) => {
         if (!fullName) return { gameName: "未知项目", fullName: "未知项目" };
-        // 一般格式：赛诺斯-小火车呜呜呜-华为-0304 或 赛诺斯-小火车呜呜呜
         const parts = fullName.split('-');
-        if (parts.length >= 2) {
-            return { gameName: parts[1].trim(), fullName: fullName };
+        if (parts.length <= 1) return { gameName: fullName, fullName: fullName };
+        if (parts.length === 2) return { gameName: parts[1].trim(), fullName: fullName };
+
+        const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
+
+        let candidates = parts.slice(1).filter(p => {
+            const pt = p.trim().toLowerCase();
+            if (channel && pt === channel.toLowerCase()) return false;
+            if (company && pt === company.toLowerCase()) return false;
+            if (company && pt.includes(company.toLowerCase())) return false;
+            if (knownChannels.includes(pt)) return false;
+            if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
+            return true;
+        });
+
+        if (candidates.length > 0) {
+            return { gameName: candidates.map(c => c.trim()).join('-'), fullName: fullName };
         }
-        return { gameName: fullName, fullName: fullName };
+        
+        return { gameName: parts[1].trim(), fullName: fullName };
     };
 
     // 按目标结构重建 JSON 列表
     const formattedDataList = extractedBulkData.map(task => {
         const orderedData = {};
-        const { gameName, fullName } = splitProjectName(task.projectName || task["项目名称"]);
+
+        // 公司名称和集团需要提前获取用于项目名清洗
+        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
+        const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
+
+        const { gameName, fullName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
         
         // 日期处理
         const today = new Date();
         const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
         
         // 核心值
-        // 公司名称和集团：直接使用网页动态提取的“集团名称”字段，保证与系统完全一致
-        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
-        const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
         const materialTypeRaw = task.materialType || task["素材类型"] || "";
         const isGraphic = materialTypeRaw.includes("平面");
 
@@ -255,88 +333,272 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
     chrome.downloads.download({ url: url, filename: fileName });
 });
     
-// 4. 导出 CSV 功能
-document.getElementById('exportCsvBtn').addEventListener('click', () => {
+// 4. 导出 Excel 功能
+document.getElementById('exportExcelBtn').addEventListener('click', async () => {
     if (!extractedBulkData || extractedBulkData.length === 0) {
         alert("没有可导出的数据！");
         return;
     }
 
-    try {
-        // 判断第一项的任务类型来决定表头
-        const firstTask = extractedBulkData[0];
-        const materialTypeRaw = firstTask.materialType || firstTask["素材类型"] || "";
-        const isGraphic = materialTypeRaw.includes("平面");
+    if (typeof XLSX === 'undefined') {
+        alert("Excel 导出库未加载，请刷新插件后重试！");
+        return;
+    }
 
-        let headers = [];
-        if (isGraphic) {
-            headers = ["日期", "制作人", "项目名称", "公司名称", "集团", "需求方", "网易标识", "业务分类", "广告策略", "素材用途", "投放渠道", "素材类型", "原创", "尺寸延展"];
-        } else {
-            headers = ["日期", "制作人", "项目名称", "公司名称", "集团", "设计小组", "需求归属", "需求属性", "渠道", "素材类型", "工具标签", "视频总产出", "原创视频"];
-        }
+    const graphicHeaders = ["日期", "制作人", "项目名称", "公司名称", "集团", "需求方", "网易标识", "业务分类", "广告策略", "素材用途", "投放渠道", "素材类型", "原创", "尺寸延展"];
+    const videoHeaders = ["日期", "制作人", "项目名称", "公司名称", "集团", "设计小组", "需求归属", "需求属性", "渠道", "素材类型", "工具标签", "视频总产出", "原创视频"];
 
-        let csvContent = "\uFEFF"; // 添加 BOM 头
-        csvContent += headers.join(",") + "\n";
+    const splitProjectName = (fullName, company, channel) => {
+        if (!fullName) return "未知项目";
+        const parts = fullName.split('-');
+        if (parts.length <= 1) return fullName;
+        if (parts.length === 2) return parts[1].trim();
 
-        // 助手函数：拆分项目名称
-        const splitProjectName = (fullName) => {
-            if (!fullName) return "未知项目";
-            const parts = fullName.split('-');
-            return parts.length >= 2 ? parts[1].trim() : fullName;
-        };
+        const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
 
-        extractedBulkData.forEach(task => {
-            const today = new Date();
-            const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
-            const gameName = splitProjectName(task.projectName || task["项目名称"]);
-            
-            // 公司名称和集团：直接使用网页动态提取的“集团名称”字段
-            const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
-            const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
-
-            let rawMaterialCount = 4;
-            const rawSets = task["所需套数"] || task["素材数"];
-            if (rawSets) {
-                const match = String(rawSets).match(/\d+/);
-                if (match) rawMaterialCount = parseInt(match[0], 10);
-            }
-            
-            const makerName = task["制作人"] || task["制作者"] || "孟祥伟";
-
-            let row = [];
-            if (isGraphic) {
-                const details = task.details || [];
-                const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity) || 0), 0) || (rawMaterialCount * details.length);
-                row = [
-                    dateStr, makerName, gameName, companyName, companyName,
-                    task["需求方"] || "移动终端事业部", "非网易",
-                    task["需求归属"] || task["业务分组"] || "移动终端-IAA", "竞价",
-                    task["需求属性"] || task["素材用途"] || "代投", mediaChannel,
-                    "平面-买量素材-奇觅", rawMaterialCount, totalExt
-                ];
-            } else {
-                row = [
-                    dateStr, makerName, gameName, companyName, companyName,
-                    "AIGC组", "移动终端-IAA", "代投", mediaChannel,
-                    "视频", "奇觅", rawMaterialCount, rawMaterialCount
-                ];
-            }
-
-            const escapedRow = row.map(val => `"${String(val).replace(/"/g, '""')}"`);
-            csvContent += escapedRow.join(",") + "\n";
+        let candidates = parts.slice(1).filter(p => {
+            const pt = p.trim().toLowerCase();
+            if (channel && pt === channel.toLowerCase()) return false;
+            if (company && pt === company.toLowerCase()) return false;
+            if (company && pt.includes(company.toLowerCase())) return false;
+            if (knownChannels.includes(pt)) return false;
+            if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
+            return true;
         });
 
-        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+        if (candidates.length > 0) {
+            return candidates.map(c => c.trim()).join('-');
+        }
+
+        return parts[1].trim();
+    };
+
+    const getTaskExportBase = (task) => {
+        const today = new Date();
+        const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
+        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
+        const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
+        const gameName = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
+
+        let rawMaterialCount = 4;
+        const rawSets = task["所需套数"] || task["素材数"];
+        if (rawSets) {
+            const match = String(rawSets).match(/\d+/);
+            if (match) rawMaterialCount = parseInt(match[0], 10);
+        }
+
+        return {
+            dateStr,
+            companyName,
+            mediaChannel,
+            gameName,
+            rawMaterialCount,
+            makerName: task["制作人"] || task["制作者"] || "制作人",
+            details: task.details || []
+        };
+    };
+
+    const createBorder = () => ({
+        top: { style: "thin", color: { rgb: "D0D7E5" } },
+        bottom: { style: "thin", color: { rgb: "D0D7E5" } },
+        left: { style: "thin", color: { rgb: "D0D7E5" } },
+        right: { style: "thin", color: { rgb: "D0D7E5" } }
+    });
+
+    const createAlignment = () => ({
+        wrapText: true,
+        horizontal: "center",
+        vertical: "center"
+    });
+
+    const createHeaderStyle = () => ({
+        fill: { patternType: "solid", fgColor: { rgb: "2F75B5" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        border: createBorder(),
+        alignment: createAlignment()
+    });
+
+    const createDataCellStyle = (header) => {
+        const style = {
+            border: createBorder(),
+            alignment: createAlignment()
+        };
+
+        if (header === "项目名称") {
+            style.fill = { patternType: "solid", fgColor: { rgb: "D9E1F2" } };
+        }
+
+        if (header === "投放渠道" || header === "渠道") {
+            style.fill = { patternType: "solid", fgColor: { rgb: "FCE4D6" } };
+        }
+
+        if (["原创", "尺寸延展", "视频总产出", "原创视频"].includes(header)) {
+            style.fill = { patternType: "solid", fgColor: { rgb: "E2EFDA" } };
+            style.font = { bold: true };
+        }
+
+        return style;
+    };
+
+    const getColumnWidths = (headers) => {
+        const widthMap = {
+            "日期": 12,
+            "制作人": 12,
+            "项目名称": 25,
+            "公司名称": 18,
+            "集团": 18,
+            "需求方": 16,
+            "网易标识": 12,
+            "业务分类": 16,
+            "广告策略": 12,
+            "素材用途": 14,
+            "投放渠道": 14,
+            "设计小组": 14,
+            "需求归属": 14,
+            "需求属性": 14,
+            "渠道": 14,
+            "素材类型": 18,
+            "工具标签": 12,
+            "原创": 12,
+            "尺寸延展": 12,
+            "视频总产出": 12,
+            "原创视频": 12
+        };
+
+        return headers.map(header => ({ wch: widthMap[header] || 12 }));
+    };
+
+    const buildWorksheet = (headers, rows) => {
+        const aoa = [
+            headers,
+            ...rows.map(row => headers.map(header => row[header] == null ? '' : String(row[header])))
+        ];
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = getColumnWidths(headers);
+        ws['!rows'] = Array.from({ length: aoa.length }, (_, index) => {
+            return index === 0 ? { hpx: 28 } : { hpx: 24 };
+        });
+
+        headers.forEach((header, colIndex) => {
+            const cellAddress = XLSX.utils.encode_cell({ r: 0, c: colIndex });
+            if (ws[cellAddress]) {
+                ws[cellAddress].s = createHeaderStyle();
+            }
+        });
+
+        for (let rowIndex = 1; rowIndex < aoa.length; rowIndex += 1) {
+            headers.forEach((header, colIndex) => {
+                const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+                if (ws[cellAddress]) {
+                    ws[cellAddress].s = createDataCellStyle(header);
+                }
+            });
+        }
+
+        return ws;
+    };
+
+    const downloadWorkbook = (wb, fileName) => {
+        const workbookArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([workbookArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         const url = URL.createObjectURL(blob);
-        const d = new Date();
-        const yyyymmdd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-        const csvMakerName = extractedBulkData.length > 0 ? (extractedBulkData[0]["制作人"] || extractedBulkData[0]["制作者"] || "制作人") : "制作人";
-        const fileName = `${yyyymmdd}-${csvMakerName}-报表.csv`;
-        
-        chrome.downloads.download({ url: url, filename: fileName });
-        
+
+        return new Promise((resolve, reject) => {
+            chrome.downloads.download({ url, filename: fileName }, (downloadId) => {
+                const runtimeError = chrome.runtime.lastError;
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+                if (runtimeError) {
+                    reject(new Error(runtimeError.message));
+                    return;
+                }
+
+                resolve(downloadId);
+            });
+        });
+    };
+
+    const graphicTasks = [];
+    const videoTasks = [];
+
+    extractedBulkData.forEach(task => {
+        const materialType = task.materialType || task["素材类型"] || "";
+        if (materialType.includes("平面")) {
+            graphicTasks.push(task);
+        } else if (materialType.includes("视频")) {
+            videoTasks.push(task);
+        }
+    });
+
+    if (graphicTasks.length === 0 && videoTasks.length === 0) {
+        alert("没有可导出的平面或视频任务！");
+        return;
+    }
+
+    const now = new Date();
+    const yyyymmdd = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+
+    try {
+        if (graphicTasks.length > 0) {
+            const graphicRows = graphicTasks.map(task => {
+                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
+                const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
+
+                return {
+                    "日期": dateStr,
+                    "制作人": makerName,
+                    "项目名称": gameName,
+                    "公司名称": companyName,
+                    "集团": companyName,
+                    "需求方": task["需求方"] || "移动终端事业部",
+                    "网易标识": "非网易",
+                    "业务分类": task["需求归属"] || task["业务分组"] || "移动终端-IAA",
+                    "广告策略": "竞价",
+                    "素材用途": task["需求属性"] || task["素材用途"] || "代投",
+                    "投放渠道": mediaChannel,
+                    "素材类型": "平面-买量素材-奇觅",
+                    "原创": rawMaterialCount,
+                    "尺寸延展": totalExt
+                };
+            });
+
+            const graphicSheet = buildWorksheet(graphicHeaders, graphicRows);
+            const graphicWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(graphicWorkbook, graphicSheet, "平面报表");
+            const graphicMakerName = graphicRows[0]["制作人"] || "制作人";
+            await downloadWorkbook(graphicWorkbook, `${yyyymmdd}-${graphicMakerName}-平面报表.xlsx`);
+        }
+
+        if (videoTasks.length > 0) {
+            const videoRows = videoTasks.map(task => {
+                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName } = getTaskExportBase(task);
+
+                return {
+                    "日期": dateStr,
+                    "制作人": makerName,
+                    "项目名称": gameName,
+                    "公司名称": companyName,
+                    "集团": companyName,
+                    "设计小组": "AIGC组",
+                    "需求归属": task["需求归属"] || "移动终端-IAA",
+                    "需求属性": task["需求属性"] || "代投",
+                    "渠道": mediaChannel,
+                    "素材类型": "视频",
+                    "工具标签": "奇觅",
+                    "视频总产出": String(rawMaterialCount),
+                    "原创视频": rawMaterialCount
+                };
+            });
+
+            const videoSheet = buildWorksheet(videoHeaders, videoRows);
+            const videoWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(videoWorkbook, videoSheet, "视频报表");
+            const videoMakerName = videoRows[0]["制作人"] || "制作人";
+            await downloadWorkbook(videoWorkbook, `${yyyymmdd}-${videoMakerName}-视频报表.xlsx`);
+        }
     } catch (err) {
-        console.error("生成 CSV 失败:", err);
-        alert("生成 CSV 文件失败：" + err.message);
+        console.error("生成 Excel 失败:", err);
+        alert("生成 Excel 文件失败：" + err.message);
     }
 });

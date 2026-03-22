@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartAd 素材需求提取助手</title>
-    <!-- 引入 SheetJS 用于导出 Excel -->
-    <script src="xlsx.full.min.js"></script>
     <style>
         body {
             width: 300px;
@@ -107,19 +105,21 @@
         /* 导出按钮容器 */
         .export-actions {
             display: flex;
-            gap: 8px;
+            flex-direction: column;
+            width: 100%;
+            gap: 10px;
         }
 
         .export-actions button {
-            flex: 1;
+            width: 100%;
             padding: 8px 0;
             font-size: 13px;
         }
 
-        .btn-excel {
+        .btn-export-excel {
             background-color: #52c41a;
         }
-        .btn-excel:hover {
+        .btn-export-excel:hover {
             background-color: #73d13d;
         }
 
@@ -142,18 +142,18 @@
     <div id="previewArea">
         <div id="statusText"></div>
         <ul id="taskList"></ul>
-            <div class="flex space-x-2 pb-2">
-                <button id="exportCsvBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded shadow transition-colors">
-                    导出 CSV
-                </button>
-                <button id="exportJsonBtn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded shadow transition-colors">
-                    导出 JSON
-                </button>
-            </div>
+        <div class="export-actions">
+            <button id="exportExcelBtn" class="btn-export-excel">
+                导出 Excel
+            </button>
+            <button id="exportJsonBtn" class="btn-json">
+                导出 JSON
+            </button>
         </div>
-    </div>
+        </div>
     
     <!-- Scripts -->
+    <script src="xlsx.bundle.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
