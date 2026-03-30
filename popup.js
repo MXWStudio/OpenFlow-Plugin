@@ -237,6 +237,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         if (parts.length === 2) return { gameName: parts[1].trim(), fullName: fullName };
 
         const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
+        const commonTags = ["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"];
 
         let candidates = parts.slice(1).filter(p => {
             const pt = p.trim().toLowerCase();
@@ -244,12 +245,15 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
             if (company && pt === company.toLowerCase()) return false;
             if (company && pt.includes(company.toLowerCase())) return false;
             if (knownChannels.includes(pt)) return false;
+            if (commonTags.includes(pt)) return false;
             if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
             return true;
         });
 
         if (candidates.length > 0) {
-            return { gameName: candidates.map(c => c.trim()).join('-'), fullName: fullName };
+            // 返回最长的那一段作为游戏名
+            candidates.sort((a, b) => b.trim().length - a.trim().length);
+            return { gameName: candidates[0].trim(), fullName: fullName };
         }
         
         return { gameName: parts[1].trim(), fullName: fullName };
@@ -389,6 +393,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         if (parts.length === 2) return parts[1].trim();
 
         const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
+        const commonTags = ["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"];
 
         let candidates = parts.slice(1).filter(p => {
             const pt = p.trim().toLowerCase();
@@ -396,12 +401,14 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
             if (company && pt === company.toLowerCase()) return false;
             if (company && pt.includes(company.toLowerCase())) return false;
             if (knownChannels.includes(pt)) return false;
+            if (commonTags.includes(pt)) return false;
             if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
             return true;
         });
 
         if (candidates.length > 0) {
-            return candidates.map(c => c.trim()).join('-');
+            candidates.sort((a, b) => b.trim().length - a.trim().length);
+            return candidates[0].trim();
         }
 
         return parts[1].trim();

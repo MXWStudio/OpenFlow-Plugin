@@ -66,25 +66,9 @@ function extractDataFromPage() {
     // 此时 rawTaskName 为类似 "赛诺斯-小火车呜呜呜-华为-0304"
     let projectNameStr = rawTaskName || "未知项目";
     
-    // === 去除修饰词，只保留真正游戏名 ===
-    // 加上您需要去除的词语
-    const removeWords = ['华为', 'vivo', '荣耀', 'OPPO', '小米', '赛诺斯', '华为指天椒', '指天椒'];
-    
-    // 全局且忽略大小写替换
-    removeWords.forEach(word => {
-        projectNameStr = projectNameStr.replace(new RegExp(word, 'ig'), '');
-    });
-    
-    // 去除4位日期的数字串 (例如：0304)
-    projectNameStr = projectNameStr.replace(/\d{4}/g, '');
-    
-    // 清理首尾和连续的多重短横线
-    projectNameStr = projectNameStr.replace(/-+/g, '-').replace(/^-|-$/g, '').trim();
-
-    // 保底：如果在过度提取后变成了空字符串，就恢复原样
-    if (!projectNameStr) {
-        projectNameStr = rawTaskName;
-    }
+    // 将项目全名传给后续处理流程，不要破坏原始的 "-" 分割结构，
+    // 以便 popup.js 能够进行更精准的最长匹配提取。
+    projectNameStr = rawTaskName;
 
     // 匹配网页文本中的“素材类型：视频”或“平面”
     let materialType = '未知';
