@@ -308,19 +308,18 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
 
         // 组装头部字段
         if (isGraphic) {
-            // 平面模板 (14个字段)
+            // 平面模板 (13个字段)
             orderedData["日期"] = dateStr;
-            orderedData["制作人"] = makerName;
+            orderedData["制作者"] = makerName;
             orderedData["项目名称"] = gameName;
-            orderedData["公司名称"] = companyName;
+            orderedData["公司主体"] = companyName;
             orderedData["集团"] = companyName;
             orderedData["需求方"] = task["需求方"] || "移动终端事业部";
-            orderedData["网易标识"] = "非网易";
             orderedData["业务分类"] = task["需求归属"] || task["业务分组"] || "移动终端-IAA";
-            orderedData["广告策略"] = "竞价";
-            orderedData["素材用途"] = task["需求属性"] || task["素材用途"] || "代投";
             orderedData["投放渠道"] = mediaChannel;
             orderedData["素材类型"] = "平面-买量素材-奇觅";
+            orderedData["素材用途"] = task["需求属性"] || task["素材用途"] || "代投";
+            orderedData["广告策略"] = "竞价";
             orderedData["原创"] = rawMaterialCount;
             // 尺寸延展 = 所有尺寸的所需数量之和
             const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity) || 0), 0);
@@ -345,7 +344,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         // 收集附加属性（包含项目全名）
         const extraAttributesMap = { "项目全称": fullName };
         const skipKeys = new Set([
-            "日期", "制作人", "项目游戏名称", "项目名称", "项目全称", "projectName",
+            "日期", "制作人", "制作者", "项目游戏名称", "项目名称", "项目全称", "projectName",
             "公司名称", "公司主体", "集团", "集团名称", "设计小组", "需求归属",
             "需求属性", "渠道", "投放媒体", "素材类型", "materialType", "工具标签",
             "视频总产出", "原创视频", "所需套数", "素材数", "原创", "尺寸延展",
@@ -383,7 +382,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
     // 按照指定格式命名：yyyymmdd-制作人名字数据表.json
     const d = new Date();
     const yyyymmdd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-    const finalMakerName = formattedDataList.length > 0 ? formattedDataList[0]["制作人"] : "孟祥伟";
+    const finalMakerName = formattedDataList.length > 0 ? (formattedDataList[0]["制作者"] || formattedDataList[0]["制作人"]) : "孟祥伟";
     const fileName = `${yyyymmdd}-${finalMakerName}数据表.json`;
 
     chrome.downloads.download({ url: url, filename: fileName });
@@ -401,7 +400,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         return;
     }
 
-    const graphicHeaders = ["日期", "制作人", "项目名称", "公司名称", "集团", "需求方", "网易标识", "业务分类", "广告策略", "素材用途", "投放渠道", "素材类型", "原创", "尺寸延展"];
+    const graphicHeaders = ["日期", "制作者", "项目名称", "公司主体", "集团", "需求方", "业务分类", "投放渠道", "素材类型", "素材用途", "广告策略", "原创", "尺寸延展"];
     const videoHeaders = ["日期", "制作人", "项目名称", "公司名称", "集团", "设计小组", "需求归属", "需求属性", "渠道", "素材类型", "工具标签", "视频总产出", "原创视频"];
 
     const splitProjectName = (fullName, company, channel) => {
@@ -503,8 +502,10 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         const widthMap = {
             "日期": 12,
             "制作人": 12,
+            "制作者": 12,
             "项目名称": 25,
             "公司名称": 18,
+            "公司主体": 18,
             "集团": 18,
             "需求方": 16,
             "网易标识": 12,
@@ -606,17 +607,16 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
 
                 return {
                     "日期": dateStr,
-                    "制作人": makerName,
+                    "制作者": makerName,
                     "项目名称": gameName,
-                    "公司名称": companyName,
+                    "公司主体": companyName,
                     "集团": companyName,
                     "需求方": task["需求方"] || "移动终端事业部",
-                    "网易标识": "非网易",
                     "业务分类": task["需求归属"] || task["业务分组"] || "移动终端-IAA",
-                    "广告策略": "竞价",
-                    "素材用途": task["需求属性"] || task["素材用途"] || "代投",
                     "投放渠道": mediaChannel,
                     "素材类型": "平面-买量素材-奇觅",
+                    "素材用途": task["需求属性"] || task["素材用途"] || "代投",
+                    "广告策略": "竞价",
                     "原创": rawMaterialCount,
                     "尺寸延展": totalExt
                 };
@@ -625,7 +625,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
             const graphicSheet = buildWorksheet(graphicHeaders, graphicRows);
             const graphicWorkbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(graphicWorkbook, graphicSheet, "平面报表");
-            const graphicMakerName = graphicRows[0]["制作人"] || "制作人";
+            const graphicMakerName = graphicRows[0]["制作者"] || "制作者";
             await downloadWorkbook(graphicWorkbook, `${yyyymmdd}-${graphicMakerName}-平面报表.xlsx`);
         }
 
