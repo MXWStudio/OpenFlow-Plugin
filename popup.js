@@ -138,6 +138,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 function renderPreview(dataList) {
     let graphicCount = 0;
     let videoCount = 0;
+    let wdzCount = 0; // 温典战数量统计
 
     dataList.forEach(task => {
         const materialType = task.materialType || task["素材类型"] || "";
@@ -147,12 +148,23 @@ function renderPreview(dataList) {
         if (materialType.includes("视频")) {
             videoCount += 1;
         }
+
+        const orderer = task["下单人"] || "";
+        if (orderer.includes("温典战")) {
+            wdzCount += 1;
+        }
     });
 
-    document.getElementById('statusArea').innerHTML =
+    let statusHtml =
         '<span class="badge badge-success">✅ 共 ' + dataList.length + ' 个</span>' +
         '<span class="badge badge-blue">平面: ' + graphicCount + '</span>' +
         '<span class="badge badge-purple">视频: ' + videoCount + '</span>';
+
+    if (wdzCount > 0) {
+        statusHtml += '<div class="badge badge-red">特殊需求-AI批量制作-温典战 (' + wdzCount + '个)</div>';
+    }
+
+    document.getElementById('statusArea').innerHTML = statusHtml;
     document.getElementById('statusArea').style.display = 'flex';
     document.getElementById('listWrapper').style.display = 'block';
     document.getElementById('exportActions').style.display = 'flex';
@@ -167,15 +179,21 @@ function renderPreview(dataList) {
         const requiredSets = task.requiredSets || task["所需套数"] || task["素材数"] || '';
         const metaParts = [`${detailsCount} 个尺寸`];
         const safeProjectName = escapeHtmlText(projectName);
+        const orderer = task["下单人"] || "";
 
         if (requiredSets) {
             metaParts.push(`数量 ${requiredSets}`);
         }
         
+        let taskNameHtml = safeProjectName;
+        if (orderer.includes("温典战")) {
+            taskNameHtml += '<span class="badge-small-red">温典战</span>';
+        }
+
         let li = document.createElement('li');
         li.className = 'task-item';
         li.innerHTML =
-            '<span class="task-name" title="' + safeProjectName + '">' + safeProjectName + '</span>' +
+            '<span class="task-name" title="' + safeProjectName + '">' + taskNameHtml + '</span>' +
             '<span class="task-meta">' + escapeHtmlText(metaParts.join(' · ')) + '</span>';
         ul.appendChild(li);
     });
