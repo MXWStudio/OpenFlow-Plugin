@@ -314,7 +314,7 @@ async function extractBulkDataFromPageAsync(sendResponse) {
             '需求属性', '投放媒体', '渠道', '应用类型', '素材用途', '工具标签', '安装包链接', 
             '参考文件', '参考图片', '参考视频', '已制素材', '业务承接', '优先级', '注意事项',
             '需求详情', '期望完成日期', '预计交付时间', '截止日期', '任务ID', '投放预算',
-            '投放日预算', '下单方式', '下单人', '下单时间', '素材数'
+            '投放日预算', '下单方式', '下单人', '下单时间', '素材数', '素材类型'
         ];
 
         for (let j = 0; j < lines.length; j++) {
@@ -359,6 +359,11 @@ async function extractBulkDataFromPageAsync(sendResponse) {
         }
 
         // 6. 组装数据并推入数组
+        // 如果右侧详情有明确的素材类型，则以右侧详情为准
+        if (extraData['素材类型'] && (extraData['素材类型'].includes('平面') || extraData['素材类型'].includes('视频'))) {
+            materialType = extraData['素材类型'].includes('视频') ? '视频' : '平面';
+        }
+
         extractedDataList.push({
             projectName,
             materialType,
