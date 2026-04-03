@@ -1,6 +1,10 @@
 // popup.js
 let extractedBulkData = [];
 const EXTRACTED_BULK_DATA_STORAGE_KEY = 'extractedBulkData';
+const SETTINGS_STORAGE_KEY = 'smartAdSettings';
+
+const DEFAULT_GRAPHIC_HEADERS = "日期,制作者,项目名称,公司主体,集团,需求方,网易标识,业务分类,广告策略,素材用途,投放渠道,素材类型,原创,尺寸延展";
+const DEFAULT_VIDEO_HEADERS = "日期,制作人,项目名称,公司名称,集团,设计小组,需求归属,需求属性,渠道,素材类型,工具标签,视频总产出,原创视频,尺寸延展";
 
 function getStoredExtractedBulkData() {
     return new Promise((resolve, reject) => {
@@ -75,9 +79,46 @@ async function restoreExtractedBulkData() {
     }
 }
 
+async function loadSettings() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(SETTINGS_STORAGE_KEY, (result) => {
+            const settings = result[SETTINGS_STORAGE_KEY] || {};
+            document.getElementById('graphicHeadersInput').value = settings.graphicHeaders || DEFAULT_GRAPHIC_HEADERS;
+            document.getElementById('videoHeadersInput').value = settings.videoHeaders || DEFAULT_VIDEO_HEADERS;
+            resolve(settings);
+        });
+    });
+}
+
+function saveSettings() {
+    const graphicHeaders = document.getElementById('graphicHeadersInput').value.trim();
+    const videoHeaders = document.getElementById('videoHeadersInput').value.trim();
+    const settings = {
+        graphicHeaders: graphicHeaders || DEFAULT_GRAPHIC_HEADERS,
+        videoHeaders: videoHeaders || DEFAULT_VIDEO_HEADERS
+    };
+    chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: settings }, () => {
+        alert("设置已保存！");
+        document.getElementById('settingsPanel').style.display = 'none';
+    });
+}
+
+document.getElementById('settingsBtn').addEventListener('click', () => {
+    const panel = document.getElementById('settingsPanel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'flex';
+    } else {
+        panel.style.display = 'none';
+    }
+});
+
+document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+
+
 setExtractButtonPrimaryState();
 hidePreviewSections();
 void restoreExtractedBulkData();
+void loadSettings();
 
 document.getElementById('extractBtn').addEventListener('click', async () => {
     // 1. 按钮防抖与提示交互
@@ -400,8 +441,12 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         return;
     }
 
-    const graphicHeaders = ["日期", "制作者", "项目名称", "公司主体", "集团", "需求方", "业务分类", "投放渠道", "素材类型", "素材用途", "广告策略", "原创", "尺寸延展"];
-    const videoHeaders = ["日期", "制作人", "项目名称", "公司名称", "集团", "设计小组", "需求归属", "需求属性", "渠道", "素材类型", "工具标签", "视频总产出", "原创视频"];
+    const settings = await loadSettings();
+    const graphicHeadersStr = settings.graphicHeaders || DEFAULT_GRAPHIC_HEADERS;
+    const videoHeadersStr = settings.videoHeaders || DEFAULT_VIDEO_HEADERS;
+
+    const graphicHeaders = graphicHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
+    const videoHeaders = videoHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
 
     const splitProjectName = (fullName, company, channel) => {
         if (!fullName) return "未知项目";
@@ -605,13 +650,14 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
                 const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
                 const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
 
-                return {
+                const baseData = {
                     "日期": dateStr,
                     "制作者": makerName,
                     "项目名称": gameName,
                     "公司主体": companyName,
                     "集团": companyName,
                     "需求方": task["需求方"] || "移动终端事业部",
+                    "网易标识": task["网易标识"] || "",
                     "业务分类": task["需求归属"] || task["业务分组"] || "移动终端-IAA",
                     "投放渠道": mediaChannel,
                     "素材类型": "平面-买量素材-奇觅",
@@ -620,20 +666,27 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
                     "原创": rawMaterialCount,
                     "尺寸延展": totalExt
                 };
+
+                const finalRow = {};
+                graphicHeaders.forEach(header => {
+                    finalRow[header] = baseData[header] !== undefined ? baseData[header] : (task[header] || "");
+                });
+                return finalRow;
             });
 
             const graphicSheet = buildWorksheet(graphicHeaders, graphicRows);
             const graphicWorkbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(graphicWorkbook, graphicSheet, "平面报表");
-            const graphicMakerName = graphicRows[0]["制作者"] || "制作者";
+            const graphicMakerName = graphicRows[0]["制作者"] || graphicRows[0]["制作人"] || "制作者";
             await downloadWorkbook(graphicWorkbook, `${yyyymmdd}-${graphicMakerName}-平面报表.xlsx`);
         }
 
         if (videoTasks.length > 0) {
             const videoRows = videoTasks.map(task => {
-                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName } = getTaskExportBase(task);
+                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
+                const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
 
-                return {
+                const baseData = {
                     "日期": dateStr,
                     "制作人": makerName,
                     "项目名称": gameName,
@@ -645,15 +698,22 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
                     "渠道": mediaChannel,
                     "素材类型": "视频",
                     "工具标签": "奇觅",
-                    "视频总产出": String(rawMaterialCount),
-                    "原创视频": rawMaterialCount
+                    "视频总产出": String(rawMaterialCount + totalExt),
+                    "原创视频": rawMaterialCount,
+                    "尺寸延展": totalExt
                 };
+
+                const finalRow = {};
+                videoHeaders.forEach(header => {
+                    finalRow[header] = baseData[header] !== undefined ? baseData[header] : (task[header] || "");
+                });
+                return finalRow;
             });
 
             const videoSheet = buildWorksheet(videoHeaders, videoRows);
             const videoWorkbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(videoWorkbook, videoSheet, "视频报表");
-            const videoMakerName = videoRows[0]["制作人"] || "制作人";
+            const videoMakerName = videoRows[0]["制作人"] || videoRows[0]["制作者"] || "制作人";
             await downloadWorkbook(videoWorkbook, `${yyyymmdd}-${videoMakerName}-视频报表.xlsx`);
         }
     } catch (err) {

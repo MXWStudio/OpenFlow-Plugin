@@ -33,10 +33,67 @@
         .header {
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: space-between;
             font-size: 16px;
             color: #1F1F1F;
             font-weight: 600;
+        }
+
+        .settings-panel {
+            background: #FAFAFA;
+            border: 1px solid #E8E8E8;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .setting-item label {
+            font-size: 12px;
+            color: #595959;
+            font-weight: 500;
+        }
+
+        .setting-item textarea {
+            width: 100%;
+            border: 1px solid #D9D9D9;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 12px;
+            font-family: inherit;
+            resize: vertical;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .setting-item textarea:focus {
+            border-color: #1677FF;
+            box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: #F0F0F0;
         }
 
         .btn {
@@ -240,7 +297,25 @@
 </head>
 <body>
     <div class="popup-container">
-        <div class="header"><span>🚀</span><span>任务抓取工具</span></div>
+        <div class="header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span>🚀</span><span>任务抓取工具</span>
+            </div>
+            <button id="settingsBtn" class="btn btn-icon" title="设置">⚙️</button>
+        </div>
+
+        <div id="settingsPanel" class="settings-panel" style="display: none;">
+            <div class="setting-item">
+                <label>平面报表顶部字段 (逗号分隔)</label>
+                <textarea id="graphicHeadersInput" rows="3"></textarea>
+            </div>
+            <div class="setting-item">
+                <label>视频报表顶部字段 (逗号分隔)</label>
+                <textarea id="videoHeadersInput" rows="3"></textarea>
+            </div>
+            <button id="saveSettingsBtn" class="btn btn-secondary" style="margin-top: 8px;">保存设置</button>
+        </div>
+
         <button id="extractBtn" class="btn btn-primary"><span>📥</span> 提取当前页面任务</button>
         <div id="statusArea" class="status-area"></div>
         <div id="listWrapper" class="list-wrapper">
