@@ -875,63 +875,64 @@ class MaterialProcessorGUI(QMainWindow):
                     else:
                         file_item.setForeground(4, QColor("#28A745"))
 
-    # 【Fix 2】将文件提前扫描抽离
-    def preload_files(self):
-        """添加列表后，仅作简单枚举与尺寸读取，展示在下方供确认，解耦核心 validate"""
-        self.latest_report = []
-        
+    def _group_media_by_type(self, items):
+        """将媒体项（带 folder, actual_size, ext 等信息）归类为树状结构所需的分组"""
         grouped_data = {
             "视频 (Video)": {"横版": [], "竖版": []},
             "图片 (Image)": {}
         }
+        for info in items:
+            # 过滤掉统计项（不展示在树状列表的媒体分组中）
+            if info['file'].startswith('['):
+                continue
+
+            ext = os.path.splitext(info['file'])[1].lower()
+            size_str = info.get('actual_size', '未知')
+
+            if ext in self.processor.supported_video_exts:
+                if size_str != "未知" and '*' in size_str:
+                    try:
+                        w, h = map(int, size_str.split('*'))
+                        orientation = "横版" if w >= h else "竖版"
+                    except ValueError:
+                        orientation = "未知尺寸"
+                else:
+                    orientation = "未知尺寸"
+
+                if orientation not in grouped_data["视频 (Video)"]:
+                    grouped_data["视频 (Video)"][orientation] = []
+                grouped_data["视频 (Video)"][orientation].append(info)
+            else:
+                if size_str not in grouped_data["图片 (Image)"]:
+                    grouped_data["图片 (Image)"][size_str] = []
+                grouped_data["图片 (Image)"][size_str].append(info)
+        return grouped_data
+
+    def preload_files(self):
+        """添加列表后，仅作简单枚举与尺寸读取，展示在下方供确认，解耦核心 validate"""
+        self.latest_report = []
+        all_items = []
         
         for folder in self.current_folders:
-            folder_name_short = os.path.basename(folder)
-            
-            # 跳过不需要校验的特殊文件夹
             if self._should_skip_folder(folder):
                 continue
-            
-            try:
-                files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-            except Exception:
-                continue
                 
-            for file in files:
-                file_path = os.path.join(folder, file)
-                _, ext = os.path.splitext(file_path)
-                
-                if ext.lower() not in self.processor.supported_exts:
-                    continue
-                    
-                width, height = self.processor.get_media_dimensions(file_path)
-                size_str = f"{width}*{height}" if width and height else "未知"
-                
-                info = {
-                    "file": file,
+            folder_name_short = os.path.basename(folder)
+            file_infos = self.processor.scan_folder(folder)
+
+            for info in file_infos:
+                item = {
+                    "file": info['file'],
                     "folder": folder_name_short,
-                    "actual_size": size_str,
+                    "actual_size": info['actual_size'],
                     "status": "待校验",
                     "reason": "已载入，等待执行校验规则"
                 }
-                
-                # 分组归类逻辑
-                if ext.lower() in self.processor.supported_video_exts:
-                    if size_str != "未知":
-                        orientation = "横版" if width >= height else "竖版"
-                    else:
-                        orientation = "未知尺寸"
-                        if orientation not in grouped_data["视频 (Video)"]:
-                             grouped_data["视频 (Video)"][orientation] = []
-                    grouped_data["视频 (Video)"][orientation].append(info)
-                else:
-                    if size_str not in grouped_data["图片 (Image)"]:
-                        grouped_data["图片 (Image)"][size_str] = []
-                    grouped_data["图片 (Image)"][size_str].append(info)
+                all_items.append(item)
                     
         self.tree.setVisible(True)
         self.btn_toggle_log.setText("🔼 收起明细日志")
-        self.render_tree(grouped_data)
+        self.render_tree(self._group_media_by_type(all_items))
 
     # ==================== 正式校验 ====================
     def start_validation(self):
@@ -952,11 +953,6 @@ class MaterialProcessorGUI(QMainWindow):
         # 按文件夹维度统计错误
         folder_error_counts = {}  # folder_path -> error_count
         folder_file_counts = {}   # folder_path -> total_file_count
-        
-        grouped_data = {
-            "视频 (Video)": {"横版": [], "竖版": []},
-            "图片 (Image)": {}
-        }
         
         for folder in self.current_folders:
             folder_name_short = os.path.basename(folder)
@@ -983,23 +979,6 @@ class MaterialProcessorGUI(QMainWindow):
                     global_actual_size_counts[norm_actual] = global_actual_size_counts.get(norm_actual, 0) + 1
                 else:
                     folder_error_counts[folder] += 1
-                    
-                # 分组归类
-                ext = os.path.splitext(info['file'])[1].lower()
-                size_str = info['actual_size']
-                if ext in self.processor.supported_video_exts:
-                    if size_str != "未知" and '*' in size_str:
-                        w, h = map(int, size_str.split('*'))
-                        orientation = "横版" if w >= h else "竖版"
-                    else:
-                        orientation = "未知尺寸"
-                        if "未知尺寸" not in grouped_data["视频 (Video)"]:
-                            grouped_data["视频 (Video)"]["未知尺寸"] = []
-                    grouped_data["视频 (Video)"][orientation].append(info)
-                else:
-                    if size_str not in grouped_data["图片 (Image)"]:
-                        grouped_data["图片 (Image)"][size_str] = []
-                    grouped_data["图片 (Image)"][size_str].append(info)
 
         # 统计通过/失败的文件夹
         error_folders = []
@@ -1018,7 +997,7 @@ class MaterialProcessorGUI(QMainWindow):
             if actual_count < req_count:
                 qty_errors.append(f"{req_size} (缺 {req_count - actual_count} 个)")
         
-        self.render_tree(grouped_data)
+        self.render_tree(self._group_media_by_type(self.latest_report))
 
         # --- 刷新极简仪表盘 (Dashboard) ---
         has_errors = bool(error_folders) or bool(qty_errors)

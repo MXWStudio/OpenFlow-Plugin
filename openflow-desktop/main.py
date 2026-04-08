@@ -43,6 +43,41 @@ class MaterialProcessor:
             print(f"[警告] 获取文件宽高失败: {file_path} | 错误信息: {e}")
             return 0, 0
 
+    def scan_folder(self, folder_path: str) -> list:
+        """
+        枚举文件夹下所有支持的媒体文件并提取基础信息（宽、高、扩展名）
+        :param folder_path: 目标文件夹路径
+        :return: 包含文件基础信息的列表 (List of Dicts)
+        """
+        results = []
+        try:
+            if not os.path.isdir(folder_path):
+                return []
+            files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+        except Exception as e:
+            print(f"[错误] 扫描文件夹失败: {e}")
+            return []
+
+        for file in files:
+            file_path = os.path.join(folder_path, file)
+            _, ext = os.path.splitext(file_path)
+            ext_lower = ext.lower()
+            
+            if ext_lower not in self.supported_exts:
+                continue
+
+            width, height = self.get_media_dimensions(file_path)
+            size_str = f"{width}*{height}" if width and height else "未知"
+            
+            results.append({
+                "file": file,
+                "ext": ext_lower,
+                "width": width,
+                "height": height,
+                "actual_size": size_str
+            })
+        return results
+
     def validate_folder(self, folder_path: str, required_specs: dict) -> list:
         """
         校验文件夹下的媒体文件尺寸是否匹配需求并统计数量
@@ -53,27 +88,17 @@ class MaterialProcessor:
         report = []
         actual_size_counts = {}
 
-        try:
-            if not os.path.isdir(folder_path):
-                raise FileNotFoundError("提供的路径不是有效文件夹")
-                
-            # 获取目标文件夹下所有支持的子文件
-            files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-        except Exception as e:
-            print(f"[错误] 访问文件夹失败: {e}")
-            return [{"file": folder_path, "status": "严重错误", "reason": str(e)}]
+        if not os.path.isdir(folder_path):
+            return [{"file": folder_path, "status": "严重错误", "reason": "提供的路径不是有效文件夹"}]
 
-        for file in files:
-            file_path = os.path.join(folder_path, file)
-            _, ext = os.path.splitext(file_path)
-            
-            if ext.lower() not in self.supported_exts:
-                continue
+        file_infos = self.scan_folder(folder_path)
 
-            width, height = self.get_media_dimensions(file_path)
-            
+        for info in file_infos:
+            file = info['file']
+            size_str = info['actual_size']
+
             # 判断尺寸提取是否成功
-            if width == 0 or height == 0:
+            if info['width'] == 0 or info['height'] == 0:
                 report.append({
                     "file": file,
                     "status": "格式错误",
@@ -82,7 +107,6 @@ class MaterialProcessor:
                 })
                 continue
 
-            size_str = f"{width}*{height}"
             actual_size_counts[size_str] = actual_size_counts.get(size_str, 0) + 1
 
             # 核对单个文件是否在需求列表中
