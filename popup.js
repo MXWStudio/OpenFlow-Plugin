@@ -356,6 +356,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
             orderedData["公司主体"] = companyName;
             orderedData["集团"] = companyName;
             orderedData["需求方"] = task["需求方"] || "移动终端事业部";
+            orderedData["网易标识"] = companyName.includes("网易") ? "网易" : "非网易";
             orderedData["业务分类"] = task["需求归属"] || task["业务分组"] || "移动终端-IAA";
             orderedData["投放渠道"] = mediaChannel;
             orderedData["素材类型"] = "平面-买量素材-奇觅";
@@ -657,7 +658,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
                     "公司主体": companyName,
                     "集团": companyName,
                     "需求方": task["需求方"] || "移动终端事业部",
-                    "网易标识": task["网易标识"] || "",
+                    "网易标识": companyName.includes("网易") ? "网易" : "非网易",
                     "业务分类": task["需求归属"] || task["业务分组"] || "移动终端-IAA",
                     "投放渠道": mediaChannel,
                     "素材类型": "平面-买量素材-奇觅",
