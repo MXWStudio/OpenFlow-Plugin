@@ -685,7 +685,16 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         if (videoTasks.length > 0) {
             const videoRows = videoTasks.map(task => {
                 const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
-                const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
+
+                let totalExt = 0;
+                if (details && details.length === 2) {
+                    totalExt = rawMaterialCount;
+                } else if (details && details.length > 2) {
+                    totalExt = rawMaterialCount * 2;
+                } else if (details && details.length === 1) {
+                    // Fallback to 0 if only 1 detail, just in case (though user stated minimum is 2)
+                    totalExt = 0;
+                }
 
                 const baseData = {
                     "日期": dateStr,
