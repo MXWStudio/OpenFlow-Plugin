@@ -1,6 +1,40 @@
 // popup.js
 let extractedBulkData = [];
 const EXTRACTED_BULK_DATA_STORAGE_KEY = 'extractedBulkData';
+
+const KNOWN_CHANNELS = new Set(["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"]);
+const COMMON_TAGS = new Set(["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"]);
+const SPECIAL_STYLE_HEADERS = new Set(["原创", "尺寸延展", "视频总产出", "原创视频"]);
+
+/**
+ * 助手函数：拆分项目名称，提取游戏名，灵活过滤冗余信息
+ */
+function splitProjectName(fullName, company, channel) {
+    if (!fullName) return { gameName: "未知项目", fullName: "未知项目" };
+    const parts = fullName.split('-');
+    if (parts.length <= 1) return { gameName: fullName, fullName: fullName };
+    if (parts.length === 2) return { gameName: parts[1].trim(), fullName: fullName };
+
+    let candidates = parts.slice(1).filter(p => {
+        const pt = p.trim();
+        const ptl = pt.toLowerCase();
+        if (channel && ptl === channel.toLowerCase()) return false;
+        if (company && ptl === company.toLowerCase()) return false;
+        if (company && ptl.includes(company.toLowerCase())) return false;
+        if (KNOWN_CHANNELS.has(ptl)) return false;
+        if (COMMON_TAGS.has(ptl)) return false;
+        if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
+        return true;
+    });
+
+    if (candidates.length > 0) {
+        // 返回最长的那一段作为游戏名
+        candidates.sort((a, b) => b.trim().length - a.trim().length);
+        return { gameName: candidates[0].trim(), fullName: fullName };
+    }
+
+    return { gameName: parts[1].trim(), fullName: fullName };
+}
 const SETTINGS_STORAGE_KEY = 'smartAdSettings';
 
 const DEFAULT_GRAPHIC_HEADERS = "日期,制作者,项目名称,公司主体,集团,需求方,网易标识,业务分类,广告策略,素材用途,投放渠道,素材类型,原创,尺寸延展";
@@ -287,36 +321,6 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         alert("没有可导出的数据！");
         return;
     }
-    
-    // 助手函数：拆分项目名称，提取游戏名，灵活过滤冗余信息
-    const splitProjectName = (fullName, company, channel) => {
-        if (!fullName) return { gameName: "未知项目", fullName: "未知项目" };
-        const parts = fullName.split('-');
-        if (parts.length <= 1) return { gameName: fullName, fullName: fullName };
-        if (parts.length === 2) return { gameName: parts[1].trim(), fullName: fullName };
-
-        const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
-        const commonTags = ["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"];
-
-        let candidates = parts.slice(1).filter(p => {
-            const pt = p.trim().toLowerCase();
-            if (channel && pt === channel.toLowerCase()) return false;
-            if (company && pt === company.toLowerCase()) return false;
-            if (company && pt.includes(company.toLowerCase())) return false;
-            if (knownChannels.includes(pt)) return false;
-            if (commonTags.includes(pt)) return false;
-            if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
-            return true;
-        });
-
-        if (candidates.length > 0) {
-            // 返回最长的那一段作为游戏名
-            candidates.sort((a, b) => b.trim().length - a.trim().length);
-            return { gameName: candidates[0].trim(), fullName: fullName };
-        }
-        
-        return { gameName: parts[1].trim(), fullName: fullName };
-    };
 
     // 按目标结构重建 JSON 列表
     const formattedDataList = extractedBulkData.map(task => {
@@ -449,40 +453,12 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
     const graphicHeaders = graphicHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
     const videoHeaders = videoHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
 
-    const splitProjectName = (fullName, company, channel) => {
-        if (!fullName) return "未知项目";
-        const parts = fullName.split('-');
-        if (parts.length <= 1) return fullName;
-        if (parts.length === 2) return parts[1].trim();
-
-        const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
-        const commonTags = ["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"];
-
-        let candidates = parts.slice(1).filter(p => {
-            const pt = p.trim().toLowerCase();
-            if (channel && pt === channel.toLowerCase()) return false;
-            if (company && pt === company.toLowerCase()) return false;
-            if (company && pt.includes(company.toLowerCase())) return false;
-            if (knownChannels.includes(pt)) return false;
-            if (commonTags.includes(pt)) return false;
-            if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
-            return true;
-        });
-
-        if (candidates.length > 0) {
-            candidates.sort((a, b) => b.trim().length - a.trim().length);
-            return candidates[0].trim();
-        }
-
-        return parts[1].trim();
-    };
-
     const getTaskExportBase = (task) => {
         const today = new Date();
         const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
         const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
         const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
-        const gameName = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
+        const { gameName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
 
         let rawMaterialCount = 4;
         const rawSets = task["所需套数"] || task["素材数"];
@@ -536,7 +512,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
             style.fill = { patternType: "solid", fgColor: { rgb: "FCE4D6" } };
         }
 
-        if (["原创", "尺寸延展", "视频总产出", "原创视频"].includes(header)) {
+        if (SPECIAL_STYLE_HEADERS.has(header)) {
             style.fill = { patternType: "solid", fgColor: { rgb: "E2EFDA" } };
             style.font = { bold: true };
         }
