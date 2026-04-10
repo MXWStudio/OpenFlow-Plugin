@@ -315,6 +315,72 @@ function flattenDataForExport(dataList) {
     return flatArray;
 }
 
+/**
+ * 助手函数：拆分项目名称，提取游戏名，灵活过滤冗余信息
+ */
+const splitProjectName = (fullName, company, channel) => {
+    if (!fullName) return { gameName: "未知项目", fullName: "未知项目" };
+    const parts = fullName.split('-');
+    if (parts.length <= 1) return { gameName: fullName, fullName: fullName };
+    if (parts.length === 2) return { gameName: parts[1].trim(), fullName: fullName };
+
+    const knownChannels = ["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"];
+    const commonTags = ["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"];
+
+    let candidates = parts.slice(1).filter(p => {
+        const pt = p.trim().toLowerCase();
+        if (channel && pt === channel.toLowerCase()) return false;
+        if (company && pt === company.toLowerCase()) return false;
+        if (company && pt.includes(company.toLowerCase())) return false;
+        if (knownChannels.includes(pt)) return false;
+        if (commonTags.includes(pt)) return false;
+        if (/^\d{4}$/.test(pt) || /^\d{6}$/.test(pt) || /^\d{8}$/.test(pt)) return false;
+        return true;
+    });
+
+    if (candidates.length > 0) {
+        // 返回最长的那一段作为游戏名
+        candidates.sort((a, b) => b.trim().length - a.trim().length);
+        return { gameName: candidates[0].trim(), fullName: fullName };
+    }
+    
+    return { gameName: parts[1].trim(), fullName: fullName };
+};
+
+/**
+ * 获取任务导出的基础信息
+ */
+const getTaskExportBase = (task) => {
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'});
+    const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
+    const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
+    const { gameName, fullName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
+
+    let rawMaterialCount = 4;
+    const rawSets = task["所需套数"] || task["素材数"];
+    if (rawSets) {
+        const match = String(rawSets).match(/\d+/);
+        if (match) rawMaterialCount = parseInt(match[0], 10);
+    }
+
+    const details = task.details || [];
+    // 尺寸延展 = 所有尺寸的所需数量之和
+    const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
+
+    return {
+        dateStr,
+        companyName,
+        mediaChannel,
+        gameName,
+        fullName,
+        rawMaterialCount,
+        totalExt,
+        makerName: task["制作人"] || task["制作者"] || "制作人",
+        details
+    };
+};
+
 // 3. 导出 JSON 功能
 document.getElementById('exportJsonBtn').addEventListener('click', () => {
     if (!extractedBulkData || extractedBulkData.length === 0) {
@@ -326,30 +392,21 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
     const formattedDataList = extractedBulkData.map(task => {
         const orderedData = {};
 
-        // 公司名称和集团需要提前获取用于项目名清洗
-        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
-        const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
-
-        const { gameName, fullName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
-        
-        // 日期处理
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
+        const {
+            dateStr,
+            companyName,
+            mediaChannel,
+            gameName,
+            fullName,
+            rawMaterialCount,
+            totalExt,
+            makerName,
+            details
+        } = getTaskExportBase(task);
         
         // 核心值
         const materialTypeRaw = task.materialType || task["素材类型"] || "";
         const isGraphic = materialTypeRaw.includes("平面");
-
-        // 统计套数 (素材数)
-        let rawMaterialCount = 4;
-        const rawSets = task["所需套数"] || task["素材数"];
-        if (rawSets) {
-            const match = String(rawSets).match(/\d+/);
-            if (match) rawMaterialCount = parseInt(match[0], 10);
-        }
-
-        const details = task.details || [];
-        const makerName = task["制作人"] || task["制作者"] || "孟祥伟";
 
         // 组装头部字段
         if (isGraphic) {
@@ -367,9 +424,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
             orderedData["素材用途"] = task["需求属性"] || task["素材用途"] || "代投";
             orderedData["广告策略"] = "竞价";
             orderedData["原创"] = rawMaterialCount;
-            // 尺寸延展 = 所有尺寸的所需数量之和
-            const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity) || 0), 0);
-            orderedData["尺寸延展"] = totalExt || (rawMaterialCount * details.length);
+            orderedData["尺寸延展"] = totalExt;
         } else {
             // 视频模板 (13个字段)
             orderedData["日期"] = dateStr;
@@ -383,7 +438,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
             orderedData["渠道"] = mediaChannel;
             orderedData["素材类型"] = "视频";
             orderedData["工具标签"] = "奇觅";
-            orderedData["视频总产出"] = String(rawMaterialCount);
+            orderedData["视频总产出"] = String(rawMaterialCount + totalExt);
             orderedData["原创视频"] = rawMaterialCount;
         }
 
@@ -452,31 +507,6 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
 
     const graphicHeaders = graphicHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
     const videoHeaders = videoHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
-
-    const getTaskExportBase = (task) => {
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
-        const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
-        const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
-        const { gameName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
-
-        let rawMaterialCount = 4;
-        const rawSets = task["所需套数"] || task["素材数"];
-        if (rawSets) {
-            const match = String(rawSets).match(/\d+/);
-            if (match) rawMaterialCount = parseInt(match[0], 10);
-        }
-
-        return {
-            dateStr,
-            companyName,
-            mediaChannel,
-            gameName,
-            rawMaterialCount,
-            makerName: task["制作人"] || task["制作者"] || "制作人",
-            details: task.details || []
-        };
-    };
 
     const createBorder = () => ({
         top: { style: "thin", color: { rgb: "D0D7E5" } },
@@ -624,8 +654,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
     try {
         if (graphicTasks.length > 0) {
             const graphicRows = graphicTasks.map(task => {
-                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
-                const totalExt = details.reduce((acc, d) => acc + (parseInt(d.requiredQuantity, 10) || 0), 0) || (rawMaterialCount * details.length);
+                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, totalExt, makerName } = getTaskExportBase(task);
 
                 const baseData = {
                     "日期": dateStr,
@@ -660,17 +689,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
 
         if (videoTasks.length > 0) {
             const videoRows = videoTasks.map(task => {
-                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, makerName, details } = getTaskExportBase(task);
-
-                let totalExt = 0;
-                if (details && details.length === 2) {
-                    totalExt = rawMaterialCount;
-                } else if (details && details.length > 2) {
-                    totalExt = rawMaterialCount * 2;
-                } else if (details && details.length === 1) {
-                    // Fallback to 0 if only 1 detail, just in case (though user stated minimum is 2)
-                    totalExt = 0;
-                }
+                const { dateStr, companyName, mediaChannel, gameName, rawMaterialCount, totalExt, makerName } = getTaskExportBase(task);
 
                 const baseData = {
                     "日期": dateStr,
