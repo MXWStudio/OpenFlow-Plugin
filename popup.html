@@ -20,7 +20,7 @@
         }
 
         .popup-container {
-            width: 340px;
+            width: 480px;
             background: #FFFFFF;
             border-radius: 12px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
@@ -37,6 +37,12 @@
             font-size: 16px;
             color: #1F1F1F;
             font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
         .settings-panel {
@@ -244,7 +250,7 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 200px;
+            max-width: 320px;
         }
 
         .task-meta {
@@ -293,6 +299,138 @@
                 transform: translateY(0);
             }
         }
+
+        /* Dark Mode Styles */
+        body.dark-theme {
+            background-color: #1e1e1e;
+        }
+
+        body.dark-theme .popup-container {
+            background: #252526;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        body.dark-theme .header {
+            color: #E0E0E0;
+        }
+
+        body.dark-theme .settings-panel {
+            background: #2D2D30;
+            border-color: #3E3E42;
+        }
+
+        body.dark-theme .setting-item label {
+            color: #A0A0A0;
+        }
+
+        body.dark-theme .setting-item textarea {
+            background: #1E1E1E;
+            border-color: #3E3E42;
+            color: #E0E0E0;
+        }
+
+        body.dark-theme .setting-item textarea:focus {
+            border-color: #007ACC;
+            box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3);
+        }
+
+        body.dark-theme .btn-icon:hover {
+            background: #3E3E42;
+        }
+
+        body.dark-theme .btn-secondary {
+            background: #333333;
+            color: #E0E0E0;
+            border-color: #3E3E42;
+        }
+
+        body.dark-theme .btn-secondary:hover {
+            background: #3E3E42;
+            border-color: #007ACC;
+            color: #007ACC;
+        }
+
+        body.dark-theme .btn-primary {
+            background: #007ACC;
+            color: #FFFFFF;
+        }
+
+        body.dark-theme .btn-primary:hover {
+            background: #0098FF;
+        }
+
+        body.dark-theme .list-wrapper {
+            background: #2D2D30;
+            border-color: #3E3E42;
+        }
+
+        body.dark-theme .task-item:hover {
+            background: #3E3E42;
+        }
+
+        body.dark-theme .task-name {
+            color: #E0E0E0;
+        }
+
+        body.dark-theme .task-meta {
+            color: #A0A0A0;
+        }
+
+        body.dark-theme .badge-success {
+            background: #1B2B1B;
+            color: #73D13D;
+            border-color: #389E0D;
+        }
+
+        body.dark-theme .badge-blue {
+            background: #112840;
+            color: #4096FF;
+            border-color: #1677FF;
+        }
+
+        body.dark-theme .badge-purple {
+            background: #221536;
+            color: #B37FEB;
+            border-color: #722ED1;
+        }
+
+        body.dark-theme .badge-red {
+            background: #301114;
+            color: #FF4D4F;
+            border-color: #CF1322;
+        }
+
+        body.dark-theme .badge-small-red {
+            background: #301114;
+            color: #FF4D4F;
+            border-color: #CF1322;
+        }
+
+        body.dark-theme .btn-excel {
+            background: #1B2B1B;
+            color: #73D13D;
+            border-color: #389E0D;
+        }
+
+        body.dark-theme .btn-excel:hover {
+            background: #233B23;
+            border-color: #52C41A;
+        }
+
+        body.dark-theme .btn-json {
+            background: #221536;
+            color: #B37FEB;
+            border-color: #722ED1;
+        }
+
+        body.dark-theme .btn-json:hover {
+            background: #2B1D45;
+            border-color: #9254DE;
+        }
+
+        body.dark-theme .task-list::-webkit-scrollbar-thumb {
+            background: #555555;
+        }
     </style>
 </head>
 <body>
@@ -301,7 +439,10 @@
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span>🚀</span><span>任务抓取工具</span>
             </div>
-            <button id="settingsBtn" class="btn btn-icon" title="设置">⚙️</button>
+            <div class="header-actions">
+                <button id="themeToggleBtn" class="btn btn-icon" title="切换模式">☀️</button>
+                <button id="settingsBtn" class="btn btn-icon" title="设置">⚙️</button>
+            </div>
         </div>
 
         <div id="settingsPanel" class="settings-panel" style="display: none;">

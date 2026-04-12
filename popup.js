@@ -149,10 +149,30 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
 
 
+// 主题切换逻辑
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+themeToggleBtn.addEventListener('click', () => {
+    const isDark = document.body.classList.toggle('dark-theme');
+    themeToggleBtn.textContent = isDark ? '🌙' : '☀️';
+    chrome.storage.local.set({ isDarkTheme: isDark });
+});
+
+function loadTheme() {
+    chrome.storage.local.get('isDarkTheme', (result) => {
+        if (result.isDarkTheme) {
+            document.body.classList.add('dark-theme');
+            themeToggleBtn.textContent = '🌙';
+        } else {
+            themeToggleBtn.textContent = '☀️';
+        }
+    });
+}
+
 setExtractButtonPrimaryState();
 hidePreviewSections();
 void restoreExtractedBulkData();
 void loadSettings();
+void loadTheme();
 
 document.getElementById('extractBtn').addEventListener('click', async () => {
     // 1. 按钮防抖与提示交互
@@ -214,6 +234,7 @@ function renderPreview(dataList) {
     let graphicCount = 0;
     let videoCount = 0;
     let wdzCount = 0; // 温典战数量统计
+    let victorCount = 0; // 维克多数量统计
 
     dataList.forEach(task => {
         const materialType = task.materialType || task["素材类型"] || "";
@@ -228,6 +249,9 @@ function renderPreview(dataList) {
         if (orderer.includes("温典战")) {
             wdzCount += 1;
         }
+        if (orderer.includes("维克多")) {
+            victorCount += 1;
+        }
     });
 
     let statusHtml =
@@ -237,6 +261,9 @@ function renderPreview(dataList) {
 
     if (wdzCount > 0) {
         statusHtml += '<div class="badge badge-red">特殊需求-AI批量制作-温典战 (' + wdzCount + '个)</div>';
+    }
+    if (victorCount > 0) {
+        statusHtml += '<div class="badge badge-red">特殊需求-AI批量制作-维克多（ 整图直接用AI生成，注意！生成注意标题的美观、突出主体、色彩饱和度 ） (' + victorCount + '个)</div>';
     }
 
     document.getElementById('statusArea').innerHTML = statusHtml;
@@ -263,6 +290,9 @@ function renderPreview(dataList) {
         let taskNameHtml = safeProjectName;
         if (orderer.includes("温典战")) {
             taskNameHtml += '<span class="badge-small-red">温典战</span>';
+        }
+        if (orderer.includes("维克多")) {
+            taskNameHtml += '<span class="badge-small-red">维克多</span>';
         }
 
         let li = document.createElement('li');
