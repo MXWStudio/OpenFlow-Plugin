@@ -35,6 +35,22 @@ function splitProjectName(fullName, company, channel) {
 
     return { gameName: parts[1].trim(), fullName: fullName };
 }
+
+/**
+ * 助手函数：格式化日期
+ * @param {Date} date
+ * @param {string} format 'YYYY/MM/DD' 或 'YYYYMMDD'
+ */
+function formatDate(date, format) {
+    if (format === 'YYYY/MM/DD') {
+        return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
+    }
+    if (format === 'YYYYMMDD') {
+        return date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+    }
+    return '';
+}
+
 const SETTINGS_STORAGE_KEY = 'smartAdSettings';
 
 const DEFAULT_GRAPHIC_HEADERS = "日期,制作者,项目名称,公司主体,集团,需求方,网易标识,业务分类,广告策略,素材用途,投放渠道,素材类型,原创,尺寸延展";
@@ -363,8 +379,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
         const { gameName, fullName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
         
         // 日期处理
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
+        const dateStr = formatDate(new Date(), 'YYYY/MM/DD');
         
         // 核心值
         const materialTypeRaw = task.materialType || task["素材类型"] || "";
@@ -456,8 +471,7 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
     const url = URL.createObjectURL(blob);
     
     // 按照指定格式命名：yyyymmdd-制作人名字数据表.json
-    const d = new Date();
-    const yyyymmdd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    const yyyymmdd = formatDate(new Date(), 'YYYYMMDD');
     const finalMakerName = formattedDataList.length > 0 ? (formattedDataList[0]["制作者"] || formattedDataList[0]["制作人"]) : "孟祥伟";
     const fileName = `${yyyymmdd}-${finalMakerName}数据表.json`;
 
@@ -484,8 +498,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
     const videoHeaders = videoHeadersStr.split(',').map(s => s.trim()).filter(Boolean);
 
     const getTaskExportBase = (task) => {
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '/');
+        const dateStr = formatDate(new Date(), 'YYYY/MM/DD');
         const companyName = task["集团名称"] || task["公司名称"] || task["公司主体"] || "赛诺斯";
         const mediaChannel = task["投放媒体"] || task["渠道"] || "华为";
         const { gameName } = splitProjectName(task.projectName || task["项目名称"], companyName, mediaChannel);
@@ -648,8 +661,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         return;
     }
 
-    const now = new Date();
-    const yyyymmdd = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+    const yyyymmdd = formatDate(new Date(), 'YYYYMMDD');
 
     try {
         if (graphicTasks.length > 0) {
