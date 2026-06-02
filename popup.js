@@ -1,6 +1,8 @@
 // popup.js
 let extractedBulkData = [];
+let extractionMetadata = {};
 const EXTRACTED_BULK_DATA_STORAGE_KEY = 'extractedBulkData';
+const EXTRACTED_BULK_META_STORAGE_KEY = 'extractedBulkDataMeta';
 
 const KNOWN_CHANNELS = new Set(["华为", "穿山甲", "广点通", "快手", "腾讯", "抖音", "头条", "oppo", "vivo", "小米", "百度", "b站", "微信", "朋友圈", "优量汇", "巨量", "巨量引擎", "苹果", "ios", "安卓", "android"]);
 const COMMON_TAGS = new Set(["手动", "自动", "竖版", "横版", "测试", "常规", "首发", "图文", "视频", "平面", "自投", "代投"]);
@@ -69,9 +71,25 @@ function getStoredExtractedBulkData() {
     });
 }
 
-function saveExtractedBulkData(dataList) {
+function getStoredExtractedBulkMeta() {
     return new Promise((resolve, reject) => {
-        chrome.storage.local.set({ [EXTRACTED_BULK_DATA_STORAGE_KEY]: dataList }, () => {
+        chrome.storage.local.get(EXTRACTED_BULK_META_STORAGE_KEY, (result) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+
+            resolve(result[EXTRACTED_BULK_META_STORAGE_KEY] || {});
+        });
+    });
+}
+
+function saveExtractedBulkData(dataList, metadata = {}) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.set({
+            [EXTRACTED_BULK_DATA_STORAGE_KEY]: dataList,
+            [EXTRACTED_BULK_META_STORAGE_KEY]: metadata
+        }, () => {
             if (chrome.runtime.lastError) {
                 reject(new Error(chrome.runtime.lastError.message));
                 return;
@@ -88,6 +106,81 @@ function escapeHtmlText(value) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+function sanitizePathSegment(value, fallback = '未命名') {
+    let text = String(value ?? '')
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/[<>:"/\\|?*]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .replace(/_+/g, '_')
+        .trim()
+        .replace(/^[. ]+|[. ]+$/g, '');
+
+    if (!text) text = fallback;
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(text)) {
+        text = `${text}_`;
+    }
+    return text;
+}
+
+function normalizeResolution(value) {
+    const match = String(value ?? '').trim().match(/(\d+)\s*[*xX×-]\s*(\d+)/);
+    return match ? `${match[1]}*${match[2]}` : '';
+}
+
+function parseRequiredQuantity(value) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
+    const match = String(value ?? '').match(/\d+/);
+    if (!match) return undefined;
+    const parsed = parseInt(match[0], 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function buildExtractionWarnings(dataList) {
+    const warnings = [];
+    if (!Array.isArray(dataList) || dataList.length === 0) {
+        return ['未提取到任何任务'];
+    }
+
+    dataList.forEach((task, index) => {
+        const projectName = task.projectName || task['项目名称'] || `第 ${index + 1} 个任务`;
+        const details = Array.isArray(task.details) ? task.details : [];
+        if (details.length === 0) {
+            warnings.push(`${projectName} 缺少尺寸要求`);
+            return;
+        }
+        const missingResolution = details.filter(detail => !normalizeResolution(detail.resolution || detail['分辨率'])).length;
+        const missingQuantity = details.filter(detail => parseRequiredQuantity(detail.requiredQuantity ?? detail['所需数量']) == null).length;
+        if (missingResolution > 0) warnings.push(`${projectName} 有 ${missingResolution} 条尺寸无法识别`);
+        if (missingQuantity > 0) warnings.push(`${projectName} 有 ${missingQuantity} 条尺寸缺少数量`);
+    });
+
+    return warnings;
+}
+
+function formatMetadataTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+async function ensureContentScriptInjected(tabId) {
+    try {
+        const [probe] = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => Boolean(window.__OPENFLOW_CONTENT_READY__)
+        });
+        if (probe?.result) return;
+    } catch (err) {
+        console.warn('检查 content.js 注入状态失败，将尝试重新注入:', err);
+    }
+
+    await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js']
+    });
 }
 
 function setExtractButtonPrimaryState() {
@@ -120,9 +213,11 @@ function hidePreviewSections() {
 async function restoreExtractedBulkData() {
     try {
         const cachedData = await getStoredExtractedBulkData();
+        const cachedMeta = await getStoredExtractedBulkMeta();
         if (Array.isArray(cachedData) && cachedData.length > 0) {
             extractedBulkData = cachedData;
-            renderPreview(extractedBulkData);
+            extractionMetadata = cachedMeta || {};
+            renderPreview(extractedBulkData, { metadata: extractionMetadata, isCached: true });
         }
     } catch (err) {
         console.error('恢复提取缓存失败:', err);
@@ -199,10 +294,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
         let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
         // 注入 content.js (如果尚未注入)
-        await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content.js']
-        });
+        await ensureContentScriptInjected(tab.id);
 
         // 2. 发送批量抓取指令
         // 给一点点延迟确保 content.js 加载完毕
@@ -218,9 +310,14 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 
                 if (response && response.success) {
                     extractedBulkData = Array.isArray(response.data) ? response.data : [];
+                    extractionMetadata = {
+                        sourceUrl: response.sourceUrl || tab.url || '',
+                        extractedAt: response.extractedAt || new Date().toISOString(),
+                        warnings: response.warnings || buildExtractionWarnings(extractedBulkData)
+                    };
 
                     try {
-                        await saveExtractedBulkData(extractedBulkData);
+                        await saveExtractedBulkData(extractedBulkData, extractionMetadata);
                     } catch (err) {
                         console.error('保存提取缓存失败:', err);
                         alert("保存提取数据失败：" + err.message);
@@ -229,7 +326,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
                         hidePreviewSections();
                         alert("未找到任何状态为“未开始”的任务！");
                     } else {
-                        renderPreview(extractedBulkData);
+                        renderPreview(extractedBulkData, { metadata: extractionMetadata });
                     }
                 } else {
                     alert("提取失败！\n" + (response?.error || '未知错误'));
@@ -246,7 +343,7 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 /**
  * 渲染预览界面
  */
-function renderPreview(dataList) {
+function renderPreview(dataList, options = {}) {
     let graphicCount = 0;
     let videoCount = 0;
     let wdzCount = 0; // 温典战数量统计
@@ -280,6 +377,15 @@ function renderPreview(dataList) {
     }
     if (victorCount > 0) {
         statusHtml += '<div class="badge badge-red">特殊需求-AI批量制作-维克多（ 整图直接用AI生成，注意！生成注意标题的美观、突出主体、色彩饱和度 ） (' + victorCount + '个)</div>';
+    }
+
+    const warnings = options.metadata?.warnings || buildExtractionWarnings(dataList);
+    const extractedAtText = formatMetadataTime(options.metadata?.extractedAt);
+    if (options.isCached) {
+        statusHtml += '<span class="badge badge-blue">上次提取' + (extractedAtText ? ': ' + escapeHtmlText(extractedAtText) : '') + '</span>';
+    }
+    if (warnings.length > 0) {
+        statusHtml += '<div class="badge badge-red">' + escapeHtmlText(warnings.slice(0, 3).join('；')) + '</div>';
     }
 
     document.getElementById('statusArea').innerHTML = statusHtml;
@@ -451,29 +557,58 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => {
 
         // 组装格式化的尺寸明细
         const cleanDetails = details.map(d => {
+            const resolution = normalizeResolution(d.resolution);
+            const requiredQuantity = parseRequiredQuantity(d.requiredQuantity);
             return {
                 "版位类型": d.positionType || (isGraphic ? "平面" : "视频"),
-                "分辨率": d.resolution,
+                "分辨率": resolution || d.resolution,
                 "大小限制": d.sizeLimit,
-                "所需数量": String(d.requiredQuantity)
+                "所需数量": requiredQuantity != null ? String(requiredQuantity) : String(d.requiredQuantity || '')
             };
         });
+        const requirements = cleanDetails
+            .map(d => ({
+                resolution: normalizeResolution(d["分辨率"]),
+                requiredQuantity: parseRequiredQuantity(d["所需数量"]),
+                positionType: d["版位类型"],
+                sizeLimit: d["大小限制"]
+            }))
+            .filter(d => d.resolution);
         
         orderedData["尺寸要求明细"] = cleanDetails;
         orderedData["其他信息"] = extraAttributesMap;
 
-        return orderedData;
+        return {
+            ...orderedData,
+            projectName: orderedData["项目名称"],
+            fullName,
+            producerName: makerName,
+            materialType: orderedData["素材类型"],
+            requirements,
+            sizes: requirements.map(item => item.resolution)
+        };
     });
 
     // 导出文件
-    const jsonStr = JSON.stringify(formattedDataList, null, 2);
+    const metadataWarnings = buildExtractionWarnings(extractedBulkData);
+    const exportPayload = {
+        schemaVersion: 'openflow.requirements.v1',
+        source: {
+            app: 'OpenFlow-Plugin',
+            url: extractionMetadata.sourceUrl || '',
+        },
+        extractedAt: extractionMetadata.extractedAt || new Date().toISOString(),
+        warnings: metadataWarnings,
+        projects: formattedDataList
+    };
+    const jsonStr = JSON.stringify(exportPayload, null, 2);
     const blob = new Blob([jsonStr], {type: "application/json;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     
     // 按照指定格式命名：yyyymmdd-制作人名字数据表.json
     const yyyymmdd = formatDate(new Date(), 'YYYYMMDD');
     const finalMakerName = formattedDataList.length > 0 ? (formattedDataList[0]["制作者"] || formattedDataList[0]["制作人"]) : "孟祥伟";
-    const fileName = `${yyyymmdd}-${finalMakerName}数据表.json`;
+    const fileName = `${yyyymmdd}-${sanitizePathSegment(finalMakerName, '制作人')}数据表.json`;
 
     chrome.downloads.download({ url: url, filename: fileName });
 });
